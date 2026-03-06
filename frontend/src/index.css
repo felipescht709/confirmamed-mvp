@@ -1,0 +1,51 @@
+@import "tailwindcss";
+
+@theme {
+  /* Cores do Branding ConfirmaMED */
+  --color-brand-blue: #0054A6;
+  --color-brand-green: #79B943;
+  --color-brand-dark: #1e293b;
+  --color-brand-light: #f8fafc;
+  --color-brand-accent: #00AEEF;
+
+  /* Fontes do Branding */
+  --font-sans: "Nunito Sans", sans-serif;
+  --font-display: "Poppins", sans-serif;
+}
+
+/* Aplicando as fontes globalmente */
+:root {
+  font-family: var(--font-sans);
+}
+
+h1, h2, h3, h4, .font-display {
+  font-family: var(--font-display);
+  letter-spacing: -0.02em;
+}
+
+/* Estilização do Body usando as variáveis que acabamos de criar */
+body {
+  background-color: var(--color-brand-light);
+  color: var(--color-brand-dark);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Scrollbar fina e moderna para o Sidebar */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 10px;
+}
+
+/* Animação suave para as páginas */
+.animate-in {
+  animation: fadeIn 0.4s ease-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}

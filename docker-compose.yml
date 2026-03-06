@@ -1,0 +1,104 @@
+version: '3.8'
+
+services:
+  # --- INFRA E DATABASE ---
+  db:
+    image: postgres:15
+    container_name: confirmamed_db
+    restart: always
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./backup_utf8.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - confirmamed_net
+
+  redis:
+    image: redis:6.2-alpine
+    container_name: confirmamed_redis
+    networks:
+      - confirmamed_net
+
+  # --- WHATSAPP ENGINE (EVOLUTION API) ---
+  evolution:
+    image: atendai/evolution-api:v2.1.1
+    container_name: evolution_api
+    restart: always
+    environment:
+      - AUTHENTICATION_TYPE=apikey
+      - AUTHENTICATION_API_KEY=admin123
+      - AUTHENTICATION_EXPOSE_IN_FETCH_INSTANCES=true
+      - SERVER_TYPE=http
+      - SERVER_PORT=8080
+      - DATABASE_ENABLED=true
+      - DATABASE_PROVIDER=postgresql 
+      - DATABASE_CONNECTION_URI=postgresql://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME}?schema=evolution_v2
+      - DATABASE_SAVE_DATA_INSTANCE=true
+      - CACHE_REDIS_ENABLED=true
+      - CACHE_REDIS_URI=redis://redis:6379
+      - WEBHOOK_GLOBAL_ENABLED=false
+      - WEBHOOK_GLOBAL_URL=http://backend:4000/api/webhooks/whatsapp
+      - WEBHOOK_GLOBAL_EVENTS=APPLICATION_STARTUP,MESSAGES_UPSERT
+    ports:
+      - "8080:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - confirmamed_net
+
+  # --- NOSSA APLICAÇÃO ---
+  backend:
+    build: ./backend
+    container_name: confirmamed_api
+    env_file: .env   
+    ports:
+      - "4000:4000"
+    environment:
+      - DATABASE_URL=postgresql://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME}
+      - DB_HOST=db
+      - EVOLUTION_URL=http://evolution:8080
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    volumes:
+      - ./backend:/home/node/app
+    networks:
+      - confirmamed_net
+
+  frontend:
+    build: ./frontend
+    container_name: confirmamed_web
+    ports:
+      - "5000:5000"
+    env_file: .env
+    environment:
+      - VITE_API_URL=http://localhost:4000/api
+    volumes:
+      - ./frontend:/home/node/app
+      - /home/node/app/node_modules
+    depends_on:
+      - backend
+    networks:
+      - confirmamed_net
+    stdin_open: true 
+    tty: true
+
+networks:
+  confirmamed_net:
+    driver: bridge
+
+volumes:
+  pgdata:

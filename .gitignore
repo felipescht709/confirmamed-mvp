@@ -1,0 +1,13 @@
+# Pastas do Node
+node_modules/
+dist/
+build/
+
+# Arquivos de Ambiente 
+.env
+.env.*
+*.local
+
+# Logs e Banco de Dados Local
+*.log
+pgdata/

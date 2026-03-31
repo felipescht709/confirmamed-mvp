@@ -8,6 +8,7 @@ const unidadeRepository = require("../../repositories/unidadeRepository");
 const prompts = require("./prompts/index");
 const SessionService = require("../core/SessionService");
 const pacienteRepository = require("../../repositories/pacienteRepository");
+const PushService = require("../core/PushService");
 
 class AIOrchestrator {
   constructor() {
@@ -44,13 +45,25 @@ class AIOrchestrator {
     const regrasExecucao = [
       `# DIRETRIZES DE AGORA (NÃO IGNORE):`,
       `- PACIENTE ATUAL: ID ${pacienteId}.`,
-      `- MÉDICO: O ID do médico deve ser extraído EXCLUSIVAMENTE da última interação. Nunca assuma que o médico é o ID 1 ou o ID da consulta anterior.`,
-      `- AGENDAMENTO: Ao chamar 'criar_agendamento', use EXATAMENTE o profissional_id que você acabou de verificar na 'verificar_disponibilidade'.`,
+      `- MÉDICO: O ID do médico deve ser extraído EXCLUSIVAMENTE da última interação.`,
+      `- AGENDAMENTO: Ao chamar 'criar_agendamento', use EXATAMENTE o profissional_id da disponibilidade.`,
       `- REAGENDAMENTO: Pegue o ID da consulta na ferramenta 'consultar_agendamentos_paciente'.`,
       `- HOJE: ${diaSemana}, ${dataLocal}. Hora: ${horaLocal}.`,
-    ].join("\n");
+    ];
 
-    return `[REGRAS DE OURO]\n${regrasExecucao}\n\n[IDENTIDADE]\n${contextoIdentidade}\n\n[MENSAGEM DO USUÁRIO]\n${maskedMessage}`;
+    if (session?.estado_atual === "CONFIRMACAO") {
+      regrasExecucao.push(
+        `🚨 STATUS ATUAL: O paciente recebeu um lembrete automático e o status da sessão é 'CONFIRMACAO'.`,
+        `- Se o usuário responder afirmativamente (ex: 'sim', 'vou', 'ok'), EXECUTE OBRIGATORIAMENTE a ferramenta 'confirmar_presenca'.`,
+        `- Pegue o ID da consulta do histórico da conversa.`,
+      );
+    } else if (session?.estado_atual === "TRIAGEM") {
+      regrasExecucao.push(
+        `- Estamos na fase de triagem inicial. Descubra o que o usuário deseja e guie a conversa.`,
+      );
+    }
+  
+    return `[REGRAS DE OURO]\n${regrasExecucao.join("\n")}\n\n[IDENTIDADE]\n${contextoIdentidade}\n\n[MENSAGEM DO USUÁRIO]\n${maskedMessage}`;
   }
 
   /**
@@ -101,22 +114,65 @@ class AIOrchestrator {
    * Ciclo de Vida Principal
    */
   async processMessage(messageData, unidadeId, telefoneOrigem, depth = 0) {
-    if (depth > 3) return { text: "TRANSFERIR", provider: "SYSTEM_LIMIT" };
+    if (depth > 3) {
+      PushService.notifyUnidade(
+        unidadeId,
+        "⚠️ IA Solicitando Ajuda",
+        `O paciente ${telefoneOrigem} está confuso ou a IA entrou em loop.`,
+        { url: "/monitor" },
+      ).catch(() => {});
+      return { text: "TRANSFERIR", provider: "SYSTEM_LIMIT" };
+    }
 
     const { body: rawMessage, history = [] } = messageData;
     const startTime = Date.now();
 
     try {
-      const maskedMessage = piiMasker.mask(
+      const maskedMessage = await piiMasker.mask(
         rawMessage,
         telefoneOrigem || "anonimo",
       );
 
-      // Executa a identificação de forma limpa
       const { contexto: contextoIdentidade, session } =
         depth === 0
           ? await this._identifyUserContext(telefoneOrigem)
           : { contexto: "", session: null };
+
+      // 1. Trava de Intervenção Humana (Transbordo)
+      if (session && session.estado_atual === "TRANSBORDO") {
+        console.log(
+          `[AIOrchestrator] Sessão ${telefoneOrigem} em modo TRANSBORDO.`,
+        );
+        return { text: "MODO_HUMANO_ATIVO", provider: "SYSTEM" };
+      }
+
+      // 2. 🔒 Trava LGPD (Consentimento Explícito)
+      if (session && session.aceite_lgpd === false && depth === 0) {
+        const inputClean = rawMessage.toLowerCase().trim();
+        const acceptKeywords = ["aceito", "sim", "concordo", "ok", "pode ser"];
+
+        if (acceptKeywords.some((kw) => inputClean.includes(kw))) {
+          // Atualiza banco e segue o baile
+          await knex("chat_sessions")
+            .where("session_id", session.session_id)
+            .update({
+              aceite_lgpd: true,
+              updated_at: knex.fn.now(),
+            });
+          session.aceite_lgpd = true;
+          // Retorna System Prompt para engajar
+          return {
+            text: "Obrigado! Seu consentimento foi registrado. Como posso ajudar você hoje?",
+            provider: "SYSTEM",
+          };
+        } else {
+          // Interrompe o fluxo da OpenAI e barra o usuário na porta
+          return {
+            text: "Olá! Para podermos realizar agendamentos e acessar seus dados de saúde, precisamos que você aceite nossos Termos de Privacidade e LGPD. Responda *ACEITO* para continuar.",
+            provider: "SYSTEM",
+          };
+        }
+      }
 
       // Dados temporais
       const agora = new Date();
@@ -223,6 +279,14 @@ class AIOrchestrator {
       return { text: finalOutput, provider: providerUsed };
     } catch (error) {
       console.error("💀 Erro Orquestrador:", error);
+      
+      PushService.notifyUnidade(
+        unidadeId,
+        "🚨 Erro Crítico na IA",
+        `Falha de processamento no atendimento de ${telefoneOrigem}. Assuma via Monitor.`,
+        { url: "/monitor" },
+      ).catch(() => {});
+
       return {
         text: "Desculpe, tive um problema técnico.",
         provider: "CRITICAL_ERROR",

@@ -7,6 +7,7 @@ const CriarAgendamentoTool = require("./CriarAgendamentoTool");
 const ConsultarAgendamentosTool = require("./ConsultarAgendamentosTool");
 const CancelarConsultaTool = require("./CancelarConsultaTool");
 const ReagendarConsultaTool = require("./ReagendarConsultaTool");
+const ConfirmarPresencaTool = require("./ConfirmarPresencaTool");
 
 // Lista bruta de ferramentas
 const toolsList = [
@@ -18,6 +19,7 @@ const toolsList = [
   ConsultarAgendamentosTool,
   CancelarConsultaTool,
   ReagendarConsultaTool,
+  ConfirmarPresencaTool,
 ];
 
 module.exports = {

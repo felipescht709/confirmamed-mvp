@@ -3,7 +3,7 @@ const axios = require("axios");
 
 class WhatsAppService {
   constructor() {
-    this.baseUrl = process.env.EVOLUTION_URL || "http://evolution_api:8080";
+    this.baseUrl = process.env.EVOLUTION_URL || "http://evolution:8080";
     this.globalToken = process.env.AUTHENTICATION_API_KEY || "admin123"; // Conforme seu docker-compose
   }
 

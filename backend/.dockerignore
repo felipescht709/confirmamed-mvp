@@ -1,5 +1,6 @@
-node_modules
-npm-debug.log
-.git
+node_modules/
 .env
-dist
+pgdata/
+evolution_sessoes/
+*.log
+dist/

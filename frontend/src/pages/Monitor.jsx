@@ -1,3 +1,4 @@
+// Monitor.jsx
 import { useEffect, useState } from "react";
 import api from "../services/api";
 import {
@@ -10,12 +11,29 @@ import {
   Search,
 } from "lucide-react";
 import { toast } from "react-hot-toast";
+import { useNavigate } from "react-router-dom";
 
 export default function Monitor() {
+  const navigate = useNavigate();
   const [conversas, setConversas] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedAudit, setSelectedAudit] = useState(null);
   const [filtro, setFiltro] = useState("");
+
+  const assumirControle = async (sessionId) => {
+    try {
+      // Chama o backend para travar a IA
+      await api.post("/ia/intervir", { session_id: sessionId });
+
+      toast.success("Você assumiu o atendimento!");
+
+      // Navega para a tela de monitoramento/chat específica
+      // Onde você poderá digitar mensagens como humano
+      navigate(`/monitor/${sessionId}`);
+    } catch (err) {
+      toast.error("Erro ao intervir na sessão.");
+    }
+  };
 
   // Busca as sessões e tenta enriquecer com dados do último log
   const fetchConversas = async () => {
@@ -196,8 +214,18 @@ export default function Monitor() {
                       >
                         <Info size={20} />
                       </button>
-                      <button className="flex items-center gap-2 px-4 py-2 bg-brand-blue text-white rounded-xl font-bold text-xs hover:shadow-lg hover:shadow-brand-blue/20 transition-all active:scale-95">
-                        <MessageCircle size={14} /> Intervir
+                      <button
+                        onClick={() => assumirControle(c.session_id)}
+                        className={`flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-xs transition-all active:scale-95 ${
+                          c.estado_atual === "TRANSBORDO"
+                            ? "bg-amber-500 text-white" // Indica que já tem humano
+                            : "bg-brand-blue text-white hover:shadow-lg hover:shadow-brand-blue/20"
+                        }`}
+                      >
+                        <MessageCircle size={14} />
+                        {c.estado_atual === "TRANSBORDO"
+                          ? "Monitorando"
+                          : "Intervir"}
                       </button>
                     </div>
                   </td>

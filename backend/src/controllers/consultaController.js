@@ -3,6 +3,7 @@ const repo = require("../repositories/consultaRepository");
 const procedimentoRepo = require("../repositories/procedimentosRepository");
 const moment = require("moment-timezone");
 const knex = require("../database/db");
+const FilaEsperaService = require("../services/core/FilaEsperaService");
 
 /**
  * Lista consultas com filtros (Usado pela Agenda do Frontend)
@@ -166,7 +167,15 @@ const update = async (req, res) => {
 const cancel = async (req, res) => {
   try {
     const { id } = req.params;
-    await repo.softDelete(id);
+
+    // Seu código original que cancela a consulta...
+    await knex("consultas")
+      .where({ id_consulta: id })
+      .update({ status: "CANCELADO" });
+
+    // 🚀 O GATILHO DO GAP FILLING (Roda solto em background)
+    FilaEsperaService.processarVagaLiberada(id);
+
     return res.json({ message: "Consulta cancelada." });
   } catch (error) {
     return res.status(500).json({ error: "Erro ao cancelar consulta." });

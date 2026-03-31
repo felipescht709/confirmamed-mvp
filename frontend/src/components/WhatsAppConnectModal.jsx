@@ -13,26 +13,25 @@ export default function WhatsAppConnectModal({ isOpen, onClose, unidade }) {
     }
   }, [isOpen, unidade]);
 
-  const conectarInstancia = async () => {
+  const conectarInstancia = async (force = false) => {
     setLoading(true);
     setError("");
     try {
-      // Endpoint que deves criar no Backend para bater na EvolutionAPI
-      const response = await api.post("/whatsapp/connect", {
+      const response = await api.post(`/whatsapp/connect${force ? "?force=true" : ""}`, {
         id_unidade: unidade.id_unidade,
       });
 
-      // A Evolution devolve o QR Code em base64
       if (response.data.qrcode) {
         setQrCode(response.data.qrcode);
+      } else if (response.data.state === "open") {
+        setError("WhatsApp já está conectado e pronto para uso!");
       } else {
-        setError("QR Code não retornado. A instância já pode estar conectada.");
+        setError(response.data.error || "Aguardando resposta da Evolution...");
       }
     } catch (err) {
       console.error(err);
-      setError(
-        "Erro ao gerar QR Code. Verifica se a EvolutionAPI está a correr.",
-      );
+      const msg = err.response?.data?.error || "Erro ao gerar QR Code.";
+      setError(msg);
     } finally {
       setLoading(false);
     }
@@ -54,7 +53,15 @@ export default function WhatsAppConnectModal({ isOpen, onClose, unidade }) {
             A gerar QR Code...
           </div>
         ) : error ? (
-          <div className="my-8 text-red-600">{error}</div>
+          <div className="my-8">
+            <div className="text-red-600 mb-4">{error}</div>
+            <button
+              onClick={() => conectarInstancia(true)}
+              className="text-xs text-blue-600 underline hover:text-blue-800"
+            >
+              Forçar reset da instância e tentar novamente
+            </button>
+          </div>
         ) : (
           qrCode && (
             <img
@@ -65,12 +72,22 @@ export default function WhatsAppConnectModal({ isOpen, onClose, unidade }) {
           )
         )}
 
-        <button
-          onClick={onClose}
-          className="bg-gray-200 text-gray-800 px-4 py-2 rounded hover:bg-gray-300 transition"
-        >
-          Fechar
-        </button>
+        <div className="flex justify-center gap-2 mt-4">
+          <button
+            onClick={onClose}
+            className="bg-gray-200 text-gray-800 px-4 py-2 rounded hover:bg-gray-300 transition"
+          >
+            Fechar
+          </button>
+          {!loading && !qrCode && (
+             <button
+             onClick={() => conectarInstancia(false)}
+             className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition"
+           >
+             Tentar Novamente
+           </button>
+          )}
+        </div>
       </div>
     </div>
   );

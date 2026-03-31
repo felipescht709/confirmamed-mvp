@@ -25,7 +25,7 @@ const AgendaCalendar = () => {
   // Estilização dinâmica dos eventos
   const eventPropGetter = (event) => {
     const isBlock = event.resource?.type === "BLOQUEIO";
-    const status = event.resource?.status;
+    const status = event.status || event.resource?.status;
 
     let className =
       "border-l-4 shadow-sm text-xs transition-all hover:brightness-95";
@@ -33,8 +33,8 @@ const AgendaCalendar = () => {
 
     if (isBlock) {
       style = {
-        backgroundColor: "#f1f5f9", // slate-100
-        color: "#64748b", // slate-500
+        backgroundColor: "#f1f5f9", 
+        color: "#64748b", 
         backgroundImage:
           "repeating-linear-gradient(45deg, transparent, transparent 5px, rgba(0,0,0,0.05) 5px, rgba(0,0,0,0.05) 10px)",
         borderLeftColor: "#94a3b8",
@@ -46,7 +46,7 @@ const AgendaCalendar = () => {
     switch (status) {
       case "CONFIRMADO":
         style.backgroundColor = "#10b981"; // emerald-500
-        style.borderLeftColor = "#065f46"; // emerald-800
+        style.borderLeftColor = "#064e3b"; // Emerald 900 
         break;
       case "CANCELADO":
         style.backgroundColor = "#ef4444"; // red-500

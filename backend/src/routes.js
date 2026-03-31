@@ -19,7 +19,9 @@ const convenioController = require("./controllers/convenioController");
 const iaController = require("./controllers/iaController");
 const whatsappController = require("./controllers/whatsappController");
 const webhookController = require("./controllers/webhookController");
+const publicChatController = require("./controllers/publicChatController");
 
+// 1. ROTAS PÚBLICAS (NÃO precisam de token)
 router.get("/healthcheck", async (req, res) => {
   try {
     // Tenta realizar uma operação matemática simples no banco
@@ -38,15 +40,21 @@ router.get("/healthcheck", async (req, res) => {
   }
 });
 
-// Rota Pública
 router.post("/login", authController.login);
 router.post("/auth/forgot-password", authController.forgotPassword);
 router.post("/auth/reset-password", authController.resetPassword);
 router.post("/webhooks/whatsapp", whatsappController.receiveMessage);
-router.post("/whatsapp/connect", whatsappController.connectInstance);
+router.get("/public/chat/:sessionId", publicChatController.getHistory);
+router.post("/public/chat/:sessionId/send", publicChatController.sendMessage);
 
-// Middleware de proteção (Daqui pra baixo precisa estar logado)
+// 2. ATIVAÇÃO DO FILTRO DE SEGURANÇA (Obrigatório daqui para baixo)
 router.use(authMiddleware);
+
+// 3. ROTAS PROTEGIDAS (Precisam de req.usuario.unidade_id)
+router.post("/whatsapp/connect", whatsappController.connectInstance);
+router.get("/ia/audit-logs", iaController.getAuditLogs);
+router.get("/ia/dashboard-stats", iaController.getAuditLogs);
+router.get("/ia/monitor", iaController.monitorSessoes);
 
 // usuários
 router.get("/usuarios", usuarioController.index);
@@ -133,10 +141,5 @@ router.get("/convenios/:convenio_id/planos", convenioController.indexPlanos);
 router.post("/planos", convenioController.storePlano);
 router.put("/planos/:id", convenioController.updatePlano);
 router.delete("/planos/:id", convenioController.destroyPlano);
-
-// Playground e monitoramento de IA
-router.get("/ia/monitor", iaController.monitorSessoes);
-router.get("/ia/audit-logs", iaController.getAuditLogs);
-router.get("/ia/dashboard-stats", iaController.getDashboardStats);
 
 module.exports = router;

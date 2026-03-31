@@ -1,4 +1,6 @@
+// services/ia/tools/UpsertPacienteTool.js
 const knex = require("../../../database/db");
+const piiMasker = require("../security/PIIMasker");
 
 const UpsertPacienteTool = {
   definition: {
@@ -30,13 +32,17 @@ const UpsertPacienteTool = {
   },
 
   async execute({ nome, cpf, data_nascimento, telefone_sessao }) {
-    const cpfLimpo = cpf.replace(/\D/g, "");
-
-    if (cpfLimpo.length !== 11) {
-      return "ERRO: O CPF fornecido é inválido. Peça ao usuário para digitar o CPF com 11 dígitos corretos.";
-    }
-
     try {
+      // 2. DESFAZ A MÁSCARA AQUI: Pega o token gerado pela IA e busca o CPF real no cofre
+      const cpfReal = await piiMasker.unmask(cpf, telefone_sessao);
+
+      // 3. Agora limpa os caracteres especiais do CPF real
+      const cpfLimpo = cpfReal.replace(/\D/g, "");
+
+      if (cpfLimpo.length !== 11) {
+        return "ERRO: O CPF fornecido é inválido. Peça ao usuário para digitar o CPF com 11 dígitos corretos.";
+      }
+
       console.log(`[TOOL] UpsertPaciente: Verificando CPF ${cpfLimpo}`);
 
       return await knex.transaction(async (trx) => {

@@ -1,188 +1,156 @@
-// src/controllers/whatsappController.js
 const knex = require("../database/db.js");
 const axios = require("axios");
 const AIOrchestrator = require("../services/ia/AIOrchestrator");
-const whatsappService = require("../services/whatsapp/whatsappService"); // Ajuste o caminho conforme sua estrutura
+const whatsappService = require("../services/whatsapp/whatsappService");
 
 const orchestrator = new AIOrchestrator();
 
-// Objeto em memória para gerenciar o buffer de mensagens por telefone
-// Em produção com múltiplas instâncias, o ideal seria usar Redis.
+// Buffer de mensagens para evitar que a IA responda "picado"
 const messageQueues = {};
 
+/**
+ * WEBHOOK: Recebe mensagens do WhatsApp via Evolution API
+ */
 const receiveMessage = async (req, res) => {
   const payload = req.body;
 
-  // Extração de dados padrão Z-API / Evolution
-  const messageId = payload.id || payload.messageId;
-  const from = payload.phone || payload.sender || payload.from;
-  const text = payload.text?.message || payload.body || payload.content;
-  const unidadeId = payload.unidadeId || 1; // Default para unidade 1
+  // Normalização de dados (Evolution v2)
+  const from = payload.data?.key?.remoteJid || payload.phone || payload.sender;
+  const text =
+    payload.data?.message?.conversation || payload.text || payload.content;
+  const instanceName = payload.instance;
 
-  if (!from || !text) {
-    return res.status(200).send("EMPTY_MESSAGE");
+  // Ignora mensagens vazias ou de status
+  if (!from || !text || !instanceName) {
+    return res.status(200).send("SKIP_EMPTY");
   }
 
   try {
-    // 1. Auditoria e Idempotência (Mantendo sua lógica original)
-    await knex("WEBHOOK_EVENTS")
-      .insert({
-        message_id: messageId,
-        payload: JSON.stringify(payload),
-        status: "RECEIVED",
-      })
-      .onConflict("message_id")
-      .ignore();
+    // 1. Localiza a unidade pela instância cadastrada no banco
+    const unidade = await knex("unidades_atendimento")
+      .where("whatsapp_instance_name", instanceName)
+      .first();
 
-    // 2. LÓGICA DE DEBOUNCE (ACUMULADOR)
+    if (!unidade) return res.status(200).send("INSTANCE_NOT_MAPPED");
+
+    // 2. Lógica de Buffer (Debounce de 15 segundos)
+    // Se for a primeira mensagem, cria o objeto de buffer
     if (!messageQueues[from]) {
-      messageQueues[from] = {
-        text: text,
-        timer: null,
-        unidadeId: unidadeId,
-      };
-    } else {
-      // Concatena com um espaço para manter a semântica
-      messageQueues[from].text += " " + text;
+      messageQueues[from] = { text: "", timer: null };
     }
 
-    // 3. Reinicia o cronômetro sempre que uma nova mensagem chega
-    if (messageQueues[from].timer) {
-      clearTimeout(messageQueues[from].timer);
-    }
+    // Acumula o texto (caso o paciente mande várias mensagens picadas)
+    messageQueues[from].text += ` ${text}`;
 
-    console.log(
-      `📩 [Whatsapp] Mensagem de ${from} acumulada. Aguardando silêncio de 20s...`,
-    );
+    // Reseta o cronômetro a cada nova mensagem
+    if (messageQueues[from].timer) clearTimeout(messageQueues[from].timer);
 
     messageQueues[from].timer = setTimeout(async () => {
-      const context = messageQueues[from];
-      const fullText = context.text;
+      const fullText = messageQueues[from].text.trim();
+      const unidadeId = unidade.id_unidade;
+      delete messageQueues[from]; // Limpa o buffer antes de processar
 
-      // Limpa a fila antes de processar para evitar condições de corrida
-      delete messageQueues[from];
+      console.log(`🚀 [AI CORE] Processando bloco de ${from}: "${fullText}"`);
 
-      console.log(
-        `🚀 [AI CORE] Processando bloco de mensagens de ${from}: "${fullText}"`,
+      // 3. Chamada ao Orquestrador de IA
+      const response = await orchestrator.processMessage(
+        { body: fullText, history: [] },
+        unidadeId,
+        from,
       );
 
-      try {
-        // 4. Chamada ao Orquestrador de IA
-        const response = await orchestrator.processMessage(
-          { body: fullText, history: [] }, // O history é recuperado pela sessão dentro do orquestrador
-          context.unidadeId,
-          from,
-        );
-
-        // 5. Envio da resposta única via Z-API
-        await whatsappService.sendMessage(from, response.text);
-
-        // Atualiza status do evento no banco
-        await knex("WEBHOOK_EVENTS")
-          .where({ message_id: messageId })
-          .update({ status: "PROCESSED" });
-      } catch (aiError) {
-        console.error(`[AI Processing Error] Telefone: ${from}`, aiError);
+      // 4. Envia resposta se não estiver em modo de transbordo humano
+      if (response && response.text !== "MODO_HUMANO_ATIVO") {
+        await whatsappService.sendMessage(from, response.text, instanceName);
       }
-    }, 20000); // 20 segundos de espera
+    }, 15000);
 
-    return res.status(200).send("EVENT_QUEUED");
+    return res.status(200).send("QUEUED");
   } catch (error) {
-    console.error(`[Webhook Error] ID: ${messageId}`, error);
+    console.error("❌ Erro Webhook:", error.message);
     return res.status(200).send("ERROR_LOGGED");
   }
 };
 
+/**
+ * FRONTEND: Gera o QR Code para conexão
+ */
 const connectInstance = async (req, res) => {
   try {
     const { id_unidade } = req.body;
-    if (!id_unidade)
-      return res.status(400).json({ error: "id_unidade é obrigatório" });
+    const targetUnidade = id_unidade || req.usuario?.unidade_id;
 
-    const instanceName = `clinica_${id_unidade}`;
-    const EVOLUTION_URL =
-      process.env.EVOLUTION_URL || "http://evolution_api:8080";
-    const GLOBAL_TOKEN = process.env.AUTHENTICATION_API_KEY || "admin123";
+    if (!targetUnidade) return res.status(400).json({ error: "Unidade não identificada." });
 
+    const instanceName = `clinica_${targetUnidade}`;
+    const EVOLUTION_URL = process.env.WHATSAPP_BASE_URL || "http://evolution:8080";
     const headers = {
-      apikey: GLOBAL_TOKEN,
-      "Content-Type": "application/json",
+      apikey: process.env.AUTHENTICATION_API_KEY || "admin123"
     };
-    let qrCodeBase64 = null;
 
-    // 1. VERIFICA O ESTADO DA INSTÂNCIA
+    // 1. Force Delete (Se solicitado)
+    if (req.query.force === "true") {
+      try {
+        await axios.delete(`${EVOLUTION_URL}/instance/delete/${instanceName}`, { headers });
+        await new Promise(r => setTimeout(r, 2000)); 
+      } catch (e) { /* ignore */ }
+    }
+
+    // 2. Tentar Criar a Instância (Payload Corrigido para v2)
+    let qrcode = null;
     try {
-      const stateRes = await axios.get(
-        `${EVOLUTION_URL}/instance/connectionState/${instanceName}`,
-        { headers },
+      const createRes = await axios.post(
+        `${EVOLUTION_URL}/instance/create`,
+        { 
+          instanceName, 
+          qrcode: true, 
+          integration: "whatsapp-baileys",
+          token: headers.apikey // Recomendado manter o token da instância igual à global no início
+        },
+        { headers }
       );
-      const state = stateRes.data?.instance?.state;
+      
+      // Na v2, o QR pode vir em caminhos diferentes dependendo da config
+      qrcode = createRes.data?.qrcode?.base64 || createRes.data?.base64;
+    } catch (e) {
+      // Se der 403/400 é porque já existe, seguimos para o connect
+      console.log(`[WhatsApp] Instância ${instanceName} já existe ou erro de validação. Tentando conectar...`);
+    }
 
-      if (state === "open") {
-        return res.status(400).json({
-          error: "O WhatsApp desta clínica já está conectado e online!",
-        });
-      }
-      console.log(
-        `[WhatsApp] Instância já existe (Estado: ${state}). Buscando QR Code...`,
-      );
-    } catch (error) {
-      // Se deu 404, a instância não existe. Vamos criar!
-      if (error.response?.status === 404) {
-        console.log(
-          `[WhatsApp] Instância não existe. Criando ${instanceName}...`,
-        );
-        await axios.post(
-          `${EVOLUTION_URL}/instance/create`,
-          {
-            instanceName: instanceName,
-            qrcode: true,
-            integration: "WHATSAPP-BAILEYS",
-          },
-          { headers },
-        );
-      } else {
-        throw error; // Se for outro erro de rede, joga pro catch final
+    // 3. Loop de Recuperação (Se a criação não trouxe o QR)
+    if (!qrcode) {
+      // Reduzi o delay de 40s para 3s. 40s derruba sua requisição HTTP por timeout!
+      for (let i = 0; i < 5; i++) { 
+        console.log(`[WhatsApp] Tentativa ${i + 1} de capturar QR Code via /connect...`);
+        
+        const connectRes = await axios.get(`${EVOLUTION_URL}/instance/connect/${instanceName}`, { headers });
+        
+        // Se já conectou, avisa o front
+        if (connectRes.data?.instance?.state === "open" || connectRes.data?.state === "open") {
+           return res.json({ message: "Conectado", state: "open" });
+        }
+
+        qrcode = connectRes.data?.base64 || connectRes.data?.qrcode?.base64 || connectRes.data?.code;
+        
+        if (qrcode && qrcode !== "pair") break;
+        await new Promise(r => setTimeout(r, 3000)); // Espera 3s entre tentativas
       }
     }
 
-    // 2. BUSCA O QR CODE EXPLICITAMENTE (A Rota garantida da EvolutionAPI)
-    // Damos um pequeno delay (1 segundo) caso ela tenha acabado de ser criada para dar tempo do Baileys gerar o QR Code
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    // 4. Finalização
+    if (qrcode) {
+      await knex("unidades_atendimento")
+        .where("id_unidade", targetUnidade)
+        .update({ whatsapp_instance_name: instanceName });
 
-    const connectRes = await axios.get(
-      `${EVOLUTION_URL}/instance/connect/${instanceName}`,
-      { headers },
-    );
-
-    // A Evolution V2 costuma devolver direto no 'base64'
-    qrCodeBase64 = connectRes.data?.base64 || connectRes.data?.qrcode?.base64;
-
-    if (!qrCodeBase64) {
-      return res.status(502).json({
-        error:
-          "A instância foi criada, mas a EvolutionAPI não retornou a imagem do QR Code.",
-      });
+      return res.json({ qrcode });
     }
 
-    // 3. SALVA NO BANCO DE DADOS
-    await knex("unidades_atendimento")
-      .where("id_unidade", id_unidade)
-      .update({ whatsapp_instance_name: instanceName });
+    return res.status(502).json({ error: "Não foi possível gerar o QR Code. Verifique o log da Evolution." });
 
-    // 4. RETORNA PARA O FRONTEND
-    return res.status(200).json({
-      qrcode: qrCodeBase64,
-      instanceName: instanceName,
-    });
   } catch (error) {
-    console.error(
-      "[WhatsAppController Fatal Error]:",
-      error.response?.data || error.message,
-    );
-    return res
-      .status(500)
-      .json({ error: "Erro interno ao processar QR Code." });
+    console.error("❌ Erro Fatal:", error.response?.data || error.message);
+    return res.status(500).json({ error: "Erro na comunicação com Evolution API." });
   }
 };
 

@@ -1,20 +1,37 @@
+// components/CustomAgendaEvent.jsx
 import React from "react";
-import { User, Clock, CheckCircle, XCircle, AlertCircle, Lock } from "lucide-react";
-import moment from 'moment';
+import {
+  User,
+  Clock,
+  CheckCircle,
+  XCircle,
+  AlertCircle,
+  Lock,
+} from "lucide-react";
+import moment from "moment";
 
 const CustomAgendaEvent = ({ event }) => {
-  const { resource, title } = event;
+  const { resource, title, start } = event;
   const isBlock = resource?.type === "BLOQUEIO";
 
-  // Ícones e cores baseados no status
+  // GARANTIA: Busca o status do nível superior (ajustado no useAgenda)
+  // ou do resource como fallback
+  const status = event.status || resource?.status;
+
+  // Ícones baseados no status real vindo do banco
   const getStatusIcon = () => {
     if (isBlock) return <Lock size={12} className="text-slate-400" />;
-    
-    switch (resource?.status) {
-      case "CONFIRMADO": return <CheckCircle size={12} className="text-emerald-100" />;
-      case "CANCELADO": return <XCircle size={12} className="text-red-100" />;
-      case "EM_ATENDIMENTO": return <Clock size={12} className="text-amber-100 animate-pulse" />;
-      default: return <AlertCircle size={12} className="text-blue-100" />; // Agendado
+
+    switch (status) {
+      case "CONFIRMADO":
+        return <CheckCircle size={12} className="text-white" />; // Branco destaca mais no fundo verde
+      case "CANCELADO":
+        return <XCircle size={12} className="text-white" />;
+      case "EM_ATENDIMENTO":
+        return <Clock size={12} className="text-white animate-pulse" />;
+      case "AGENDADO":
+      default:
+        return <AlertCircle size={12} className="text-white/80" />;
     }
   };
 
@@ -28,20 +45,27 @@ const CustomAgendaEvent = ({ event }) => {
 
   return (
     <div className="flex flex-col h-full w-full px-1.5 py-0.5 overflow-hidden leading-tight">
-      <div className="flex items-center justify-between mb-0.5">
-        <span className="text-[10px] font-bold opacity-90 truncate flex-1">
-          {moment(event.start).format("HH:mm")}
+      {/* Header do Card: Horário + Ícone de Status */}
+      <div className="flex items-center justify-between mb-0.5 border-b border-white/20 pb-0.5">
+        <span className="text-[9px] font-black opacity-90 truncate">
+          {moment(start).format("HH:mm")}
         </span>
-        {getStatusIcon()}
+        <div title={status}>{getStatusIcon()}</div>
       </div>
-      
-      <div className="flex items-center gap-1 font-semibold text-[11px] truncate">
-        <User size={10} className="opacity-70 min-w-[10px]" />
-        <span className="truncate">{title.split(" - ")[0]}</span>
+
+      {/* Corpo: Nome do Paciente (Destaque) */}
+      <div className="flex items-center gap-1 font-bold text-[10px] truncate mt-0.5">
+        <User size={9} className="opacity-70 shrink-0" />
+        <span className="truncate uppercase">
+          {resource?.paciente_nome || title.split(" - ")[0]}
+        </span>
       </div>
-      
-      <div className="text-[9px] opacity-80 truncate pl-3.5">
-        {title.split(" - ")[1] || "Consulta"}
+
+      {/* Rodapé: Procedimento ou Profissional */}
+      <div className="text-[8px] font-medium opacity-90 truncate pl-3 mt-auto">
+        {resource?.profissional_nome
+          ? `Dr(a). ${resource.profissional_nome.split(" ")[0]}`
+          : "Consulta"}
       </div>
     </div>
   );

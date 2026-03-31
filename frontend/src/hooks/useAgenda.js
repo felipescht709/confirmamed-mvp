@@ -1,3 +1,4 @@
+//hooks/useAgenda.js
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useUnidade } from "../context/UnidadeContext.jsx";
 import api from "../services/api";
@@ -70,7 +71,8 @@ export const useAgenda = () => {
           id: evt.id_consulta,
           paciente_id: evt.paciente_id,
           profissional_id: evt.profissional_id,
-          id_procedimento: evt.id_procedimento, // Importante para edição
+          id_procedimento: evt.id_procedimento,
+          status: evt.status,
           title: `${evt.paciente_nome} - ${evt.procedimento_nome || "Consulta"}`,
           start: new Date(evt.data_hora_inicio),
           end: new Date(evt.data_hora_fim),

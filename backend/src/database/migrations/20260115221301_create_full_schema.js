@@ -80,6 +80,7 @@ exports.up = function (knex) {
           .references("id_profissional_saude")
           .inTable("profissionais_da_saude") // FK corrigida
           .nullable();
+        table.string("fcm_token").nullable();
         table.boolean("ativo").defaultTo(true);
         table.timestamp("criado_em").defaultTo(knex.fn.now());
         table.timestamp("ultimo_login");

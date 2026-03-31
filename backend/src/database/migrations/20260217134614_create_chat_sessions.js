@@ -22,15 +22,17 @@ exports.up = async function (knex) {
       ])
       .defaultTo("TRIAGEM")
       .notNullable();
-
     table.jsonb("contexto_temporario").defaultTo("{}");
     table.boolean("aceite_lgpd").defaultTo(false);
     table.timestamp("expires_at").notNullable();
-
     table.timestamp("created_at").defaultTo(knex.fn.now());
     table.timestamp("updated_at").defaultTo(knex.fn.now());
-
     table.index(["paciente_telefone"], "idx_chat_telefone");
+    table
+      .integer("unidade_id")
+      .references("id_unidade")
+      .inTable("unidades_atendimento")
+      .notNullable();
   });
 };
 

@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # --- INFRA E DATABASE ---
   db:
@@ -11,7 +9,7 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD}
       POSTGRES_DB: ${DB_NAME}
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      test: [ "CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}" ]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -26,42 +24,65 @@ services:
   redis:
     image: redis:6.2-alpine
     container_name: confirmamed_redis
+    restart: unless-stopped
+    # 🔒 Segurança: Exige senha e define política de despejo de memória (Allkeys-lru)
+    command: redis-server --requirepass ${REDIS_PASSWORD:-senha_segura_aqui} --maxmemory 256mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379" # Mapeado para você conseguir inspecionar com o Redis Insight na sua máquina local
     networks:
       - confirmamed_net
+    volumes:
+      - redis_data:/data
 
   # --- WHATSAPP ENGINE (EVOLUTION API) ---
   evolution:
     image: atendai/evolution-api:v2.1.1
     container_name: evolution_api
     restart: always
+    privileged: true
+    user: "root"
+    shm_size: '2gb'
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     environment:
       - AUTHENTICATION_TYPE=apikey
       - AUTHENTICATION_API_KEY=admin123
-      - AUTHENTICATION_EXPOSE_IN_FETCH_INSTANCES=true
       - SERVER_TYPE=http
       - SERVER_PORT=8080
       - DATABASE_ENABLED=true
-      - DATABASE_PROVIDER=postgresql 
-      - DATABASE_CONNECTION_URI=postgresql://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME}?schema=evolution_v2
+      - DATABASE_PROVIDER=postgresql
+      - DATABASE_CONNECTION_URI=postgresql://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME}?schema=evolution&sslmode=disable
+      - DATABASE_CONNECTION_CLIENT_NAME=confirmamed_evo
+      # Variáveis de persistência v2
       - DATABASE_SAVE_DATA_INSTANCE=true
+      - DATABASE_SAVE_DATA_NEW_MESSAGE=true
+      - DATABASE_SAVE_DATA_CONTACTS=true
+      - DATABASE_SAVE_DATA_CHATS=true
       - CACHE_REDIS_ENABLED=true
-      - CACHE_REDIS_URI=redis://redis:6379
-      - WEBHOOK_GLOBAL_ENABLED=false
-      - WEBHOOK_GLOBAL_URL=http://backend:4000/api/webhooks/whatsapp
-      - WEBHOOK_GLOBAL_EVENTS=APPLICATION_STARTUP,MESSAGES_UPSERT
+      - CACHE_REDIS_URI=redis://:${REDIS_PASSWORD}@redis:6379/1
+      - CACHE_REDIS_PREFIX_KEY=evolution_v2
+      - LOG_LEVEL=ERROR,WARN,DEBUG,INFO
+      - WEB_BROWSER_HEADLESS=true
+      # Argumentos simplificados para evitar crash de engine
+      - WEB_BROWSER_ARGS=--no-sandbox,--disable-setuid-sandbox,--disable-dev-shm-usage,--disable-gpu
     ports:
-      - "8080:8080"
+      - "8085:8080"
     depends_on:
       db:
         condition: service_healthy
+    volumes:
+      - evolution_sessoes:/evolution/instances
     networks:
-      - confirmamed_net
+      confirmamed_net:
+        aliases:
+          - evolution
 
   # --- NOSSA APLICAÇÃO ---
   backend:
     build: ./backend
     container_name: confirmamed_api
-    env_file: .env   
+    env_file: .env
     ports:
       - "4000:4000"
     environment:
@@ -93,12 +114,34 @@ services:
       - backend
     networks:
       - confirmamed_net
-    stdin_open: true 
+    stdin_open: true
     tty: true
+
+  # --- TÚNEL PARA WEBHOOKS ---
+  ngrok:
+    image: ngrok/ngrok:latest
+    container_name: confirmamed_ngrok
+    restart: unless-stopped
+    command:
+      - http
+      - backend:4000
+      - --url=carlo-unquarried-jenell.ngrok-free.dev
+    environment:
+      - NGROK_AUTHTOKEN=${token_ngrok:?erro_token_ausente}
+    depends_on:
+      - backend
+    networks:
+      - confirmamed_net
 
 networks:
   confirmamed_net:
     driver: bridge
+    driver_opts:
+      com.docker.network.driver.mtu: "1350"
 
 volumes:
   pgdata:
+  redis_data:
+    driver: local
+  evolution_sessoes:
+    driver: local

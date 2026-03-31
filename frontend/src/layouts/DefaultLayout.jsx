@@ -1,5 +1,4 @@
 import {
-  Bot,
   Home,
   MessageSquare,
   Calendar,
@@ -8,10 +7,12 @@ import {
   Settings,
   LogOut,
 } from "lucide-react";
-import { Link, useLocation, useNavigate, Outlet } from "react-router-dom"; // Outlet adicionado
+import { Link, useLocation, useNavigate, Outlet } from "react-router-dom";
 import logo from "../assets/logo.png";
-import { useUnidade } from "../context/UnidadeContext.jsx"; // Importação do contexto
-import { useAuth } from "../context/AuthContext.jsx"; // Importação do auth
+import { useUnidade } from "../context/UnidadeContext.jsx";
+import { useAuth } from "../context/AuthContext.jsx";
+// Importação do componente de redundância
+import WebChatWidget from "../components/Chat/WebChatWidget";
 
 const menuGroups = [
   {
@@ -50,12 +51,12 @@ const menuGroups = [
 
 export default function DefaultLayout() {
   const location = useLocation();
-  const navigate = useNavigate();
-  const { logout } = useAuth(); // Usando função de logout global
-  const { unidadeSelecionada } = useUnidade(); // Consumindo unidade real do banco
+  const { logout } = useAuth();
+  const { unidadeSelecionada } = useUnidade();
 
   return (
     <div className="flex h-screen bg-brand-light overflow-hidden font-sans text-brand-dark">
+      {/* Sidebar Lateral */}
       <aside className="w-64 bg-white border-r border-slate-200 flex flex-col shadow-sm">
         <div className="p-6 mb-2">
           <img
@@ -102,7 +103,8 @@ export default function DefaultLayout() {
         </div>
       </aside>
 
-      <main className="flex-1 overflow-y-auto px-10 py-8">
+      {/* Área Principal de Conteúdo */}
+      <main className="flex-1 overflow-y-auto px-10 py-8 relative">
         <header className="flex justify-between items-center mb-10">
           <h2 className="font-display text-xl font-bold text-slate-800">
             {menuGroups
@@ -114,16 +116,23 @@ export default function DefaultLayout() {
               AD
             </div>
             <span className="text-xs font-bold text-slate-600">
-              {/* Exibe o nome da unidade vindo do contexto global */}
               {unidadeSelecionada?.nome_fantasia || "Selecione uma Unidade"}
             </span>
           </div>
         </header>
 
-        {/* IMPORTANTE: O Outlet é o espaço onde as sub-rotas (Agenda, Monitor, etc) 
-            são renderizadas quando o roteamento do App.jsx define este Layout como pai.
-        */}
+        {/* Renderização das Páginas Filhas */}
         <Outlet />
+
+        {/* WIDGET DE REDUNDÂNCIA (IA WEBCHAT) 
+          Posicionado fora do fluxo do Outlet para flutuar sobre o conteúdo.
+          Só é renderizado se houver uma unidade ativa no contexto.
+        */}
+        {unidadeSelecionada && (
+          <div className="fixed bottom-8 right-8 z-[50]">
+            <WebChatWidget unidadeId={unidadeSelecionada.id_unidade} />
+          </div>
+        )}
       </main>
     </div>
   );

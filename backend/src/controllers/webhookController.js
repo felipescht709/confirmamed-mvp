@@ -7,6 +7,7 @@ const availabilityTool = require("../services/ia/tools/AvailabilityTool");
 const protocolTool = require("../services/ia/tools/ProtocolTool");
 const schedulingTool = require("../services/ia/tools/SchedulingTool");
 
+
 const handleWhatsAppMessage = async (req, res) => {
   try {
     const payload = req.body;
@@ -132,12 +133,8 @@ const handleWhatsAppMessage = async (req, res) => {
           result = await schedulingTool.execute(args);
         }
 
-        // Envia a resposta bruta da tool. Futuro: retroalimentar a IA.
-        await whatsappService.sendTextMessage(
-          phoneNumber,
-          result,
-          instanceName,
-        );
+        const humanResponse = await aiOrchestrator.generateHumanResponse(result); 
+        await whatsappService.sendTextMessage(phoneNumber, humanResponse, instanceName);
       }
     }
 

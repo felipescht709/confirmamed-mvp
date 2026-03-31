@@ -27,10 +27,16 @@ module.exports = (req, res, next) => {
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    // Injetamos os dados no objeto 'req' para os próximos controllers usarem
+    // Injetamos o objeto completo conforme esperado pelos controllers
+    req.usuario = {
+      id: decoded.id,
+      role: decoded.role,
+      profissional_id: decoded.profissional_id,
+      unidade_id: decoded.unidade_id,
+    };
+
+    // Mantemos os antigos para não quebrar nada legado
     req.usuarioId = decoded.id;
-    req.usuarioRole = decoded.role;
-    req.profissionalId = decoded.profissional_id;
     req.unidadeId = decoded.unidade_id;
 
     return next();

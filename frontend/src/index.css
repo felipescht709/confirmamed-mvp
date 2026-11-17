@@ -1,11 +1,13 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme {
   /* Cores do Branding ConfirmaMED */
   --color-brand-blue: #0054A6;
   --color-brand-green: #79B943;
-  --color-brand-dark: #1e293b;
-  --color-brand-light: #f8fafc;
+  --color-brand-dark: var(--brand-dark);
+  --color-brand-light: var(--brand-light);
   --color-brand-accent: #00AEEF;
 
   /* Fontes do Branding */
@@ -13,9 +15,14 @@
   --font-display: "Poppins", sans-serif;
 }
 
-/* Aplicando as fontes globalmente */
 :root {
-  font-family: var(--font-sans);
+  --brand-light: #f8fafc;
+  --brand-dark: #1e293b;
+}
+
+.dark {
+  --brand-light: #0f172a; /* Slate 900 */
+  --brand-dark: #f8fafc;  /* Slate 50 */
 }
 
 h1, h2, h3, h4, .font-display {
@@ -48,4 +55,178 @@ body {
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(10px); }
   to { opacity: 1; transform: translateY(0); }
+}
+
+/* ==========================================================================
+   SUPORTE DE CONTRASTE INTELIGENTE PARA TEMA ESCURO (DARK MODE)
+   ========================================================================== */
+
+.dark {
+  /* Override de fundos padrão */
+  & .bg-white:not([class*="dark:bg-"]) {
+    background-color: #1e293b !important; /* Slate 800 */
+  }
+
+  & .bg-slate-50:not([class*="dark:bg-"]) {
+    background-color: #0f172a !important; /* Slate 900 */
+  }
+
+  /* Override de bordas padrão */
+  & .border-slate-100:not([class*="dark:border-"]),
+  & .border-slate-200:not([class*="dark:border-"]) {
+    border-color: #334155 !important; /* Slate 700 */
+  }
+
+  /* Override de textos padrão */
+  & .text-slate-800:not([class*="dark:text-"]) {
+    color: #f8fafc !important; /* Slate 50 */
+  }
+
+  & .text-slate-700:not([class*="dark:text-"]) {
+    color: #e2e8f0 !important; /* Slate 200 */
+  }
+
+  & .text-slate-600:not([class*="dark:text-"]),
+  & .text-slate-500:not([class*="dark:text-"]) {
+    color: #cbd5e1 !important; /* Slate 300 */
+  }
+
+  & .text-slate-400:not([class*="dark:text-"]) {
+    color: #94a3b8 !important; /* Slate 400 */
+  }
+
+  /* Correções globais para tags de formulário */
+  & input:not([class*="dark:bg-"]),
+  & select:not([class*="dark:bg-"]),
+  & textarea:not([class*="dark:bg-"]) {
+    background-color: #0f172a !important; /* Slate 900 */
+    color: #f8fafc !important; /* Slate 50 */
+    border-color: #334155 !important; /* Slate 700 */
+  }
+
+  & input::placeholder,
+  & textarea::placeholder {
+    color: #64748b !important; /* Slate 500 */
+  }
+
+  /* Correção para tabelas (hover e cabeçalhos) */
+  & thead.bg-slate-50:not([class*="dark:bg-"]) {
+    background-color: #0f172a !important; /* Slate 900 */
+  }
+
+  & tr.hover\:bg-slate-50:hover:not([class*="dark:hover:bg-"]) {
+    background-color: #1e293b !important; /* Slate 800 */
+  }
+
+  /* ==========================================================================
+     CUSTOM OVERRIDES FOR REACT-BIG-CALENDAR IN DARK MODE
+     ========================================================================== */
+
+  /* Botões de navegação e visualização do calendário */
+  & .rbc-btn-group button {
+    color: #f8fafc !important; /* White text */
+    border-color: #334155 !important; /* Slate 700 border */
+    background-color: transparent !important;
+  }
+
+  & .rbc-btn-group button:hover {
+    background-color: #334155 !important; /* Slate 700 hover */
+  }
+
+  & .rbc-btn-group button.rbc-active {
+    background-color: #cbd5e1 !important; /* Slate 300 background */
+    color: #0f172a !important; /* Slate 900 text */
+  }
+
+  /* Grid e Borders do Calendário */
+  & .rbc-calendar {
+    color: #cbd5e1 !important; /* Slate 300 text */
+  }
+
+  & .rbc-header {
+    border-bottom: 1px solid #334155 !important;
+    color: #f8fafc !important;
+  }
+
+  & .rbc-header + .rbc-header {
+    border-left: 1px solid #334155 !important;
+  }
+
+  & .rbc-time-header-content {
+    border-left: 1px solid #334155 !important;
+  }
+
+  & .rbc-time-content {
+    border-top: 2px solid #334155 !important;
+    background-color: #1e293b !important; /* Slate 800 */
+  }
+
+  & .rbc-day-slot {
+    border-left: 1px solid #334155 !important;
+  }
+
+  & .rbc-time-slot {
+    border-top: 1px solid #1e293b !important; /* Sutil separation */
+  }
+
+  & .rbc-timeslot-group {
+    border-bottom: 1px solid #334155 !important; /* Slate 700 separation between hours */
+  }
+
+  & .rbc-time-view {
+    border: 1px solid #334155 !important;
+  }
+
+  & .rbc-month-view {
+    border: 1px solid #334155 !important;
+  }
+
+  & .rbc-month-row {
+    border-bottom: 1px solid #334155 !important;
+  }
+
+  & .rbc-day-bg + .rbc-day-bg {
+    border-left: 1px solid #334155 !important;
+  }
+
+  /* Time gutter (coluna de horas no lado esquerdo) */
+  & .rbc-time-gutter .rbc-timeslot-group {
+    border-bottom: none !important;
+  }
+
+  & .rbc-time-gutter .rbc-time-slot {
+    color: #94a3b8 !important; /* Slate 400 */
+    border-top: none !important;
+  }
+
+  /* Highlight de hoje */
+  & .rbc-today {
+    background-color: rgba(0, 174, 239, 0.15) !important; /* Accent blue tint */
+  }
+
+  /* Data label hoje */
+  & .rbc-today.rbc-header {
+    color: #00aeef !important; /* Accent blue for today text */
+    font-weight: bold;
+  }
+
+  & .rbc-time-header-cell .rbc-today {
+    background-color: rgba(0, 174, 239, 0.15) !important;
+  }
+
+  /* Agenda View */
+  & .rbc-agenda-view table.rbc-agenda-table {
+    border: 1px solid #334155 !important;
+  }
+
+  & .rbc-agenda-view table.rbc-agenda-table tbody > tr > td {
+    border-top: 1px solid #334155 !important;
+    color: #cbd5e1 !important;
+  }
+
+  & .rbc-agenda-view table.rbc-agenda-table thead > tr > th {
+    border-bottom: 2px solid #334155 !important;
+    background-color: #0f172a !important;
+    color: #f8fafc !important;
+  }
 }

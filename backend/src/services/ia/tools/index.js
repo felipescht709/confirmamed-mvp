@@ -1,47 +1,39 @@
-// src/services/ia/tools/index.js
-const AvailabilityTool = require("./AvailabilityTool");
-const ProtocolTool = require("./ProtocolTool");
-const ClinicaTool = require("./ClinicaTool");
-const UpsertPacienteTool = require("./UpsertPacienteTool");
-const CriarAgendamentoTool = require("./CriarAgendamentoTool");
-const ConsultarAgendamentosTool = require("./ConsultarAgendamentosTool");
-const CancelarConsultaTool = require("./CancelarConsultaTool");
-const ReagendarConsultaTool = require("./ReagendarConsultaTool");
-const ConfirmarPresencaTool = require("./ConfirmarPresencaTool");
+const protocolTool = require("./ProtocolTool");
+const availabilityTool = require("./AvailabilityTool");
+const upsertPacienteTool = require("./UpsertPacienteTool");
+const criarAgendamentoTool = require("./CriarAgendamentoTool");
+const cancelarConsultaTool = require("./CancelarConsultaTool");
+const reagendarConsultaTool = require("./ReagendarConsultaTool");
+const confirmarPresencaTool = require("./ConfirmarPresencaTool");
+const consultarAgendamentosTool = require("./ConsultarAgendamentosTool");
+const entrarFilaEsperaTool = require("./EntrarFilaEsperaTool");
+const solicitarAtendenteTool = require("./SolicitarAtendenteTool");
 
-// Lista bruta de ferramentas
-const toolsList = [
-  AvailabilityTool,
-  ProtocolTool,
-  ClinicaTool,
-  UpsertPacienteTool,
-  CriarAgendamentoTool,
-  ConsultarAgendamentosTool,
-  CancelarConsultaTool,
-  ReagendarConsultaTool,
-  ConfirmarPresencaTool,
+// Exposição das ferramentas validadas num único Array
+const confirmamedTools = [
+  protocolTool,
+  availabilityTool,
+  upsertPacienteTool,
+  criarAgendamentoTool,
+  cancelarConsultaTool,
+  reagendarConsultaTool,
+  confirmarPresencaTool,
+  consultarAgendamentosTool,
+  entrarFilaEsperaTool,
+  solicitarAtendenteTool,
 ];
 
 module.exports = {
-  getTools: () => {
-    // Valida e extrai apenas as definitions corretas
-    const validTools = toolsList
-      .filter((t) => t && t.definition)
-      .map((t) => t.definition);
-
-    // 🔍 DEBUG: Printa as tools no terminal para descobrirmos a culpada
-    console.log("🛠️  [DEBUG] Quantidade de Tools válidas:", validTools.length);
-    if (validTools.length > 0 && validTools[0] === null) {
-      console.error("🚨 ALERTA: A primeira Tool está NULL!");
-    }
-
-    // Se o array ficar vazio, retorna undefined para a OpenAI não dar erro 400
-    return validTools.length > 0 ? validTools : undefined;
-  },
-
-  findTool: (name) => {
-    return toolsList.find(
-      (t) => t && t.definition && t.definition.function.name === name,
-    );
-  },
+  confirmamedTools,
+  protocolTool,
+  availabilityTool,
+  upsertPacienteTool,
+  criarAgendamentoTool,
+  cancelarConsultaTool,
+  reagendarConsultaTool,
+  confirmarPresencaTool,
+  consultarAgendamentosTool,
+  entrarFilaEsperaTool,
+  solicitarAtendenteTool,
 };
+

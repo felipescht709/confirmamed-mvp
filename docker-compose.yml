@@ -1,26 +1,4 @@
 services:
-  # --- INFRA E DATABASE ---
-  db:
-    image: postgres:15
-    container_name: confirmamed_db
-    restart: always
-    environment:
-      POSTGRES_USER: ${DB_USER}
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
-      POSTGRES_DB: ${DB_NAME}
-    healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}" ]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-    ports:
-      - "5432:5432"
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-      - ./backup_utf8.sql:/docker-entrypoint-initdb.d/init.sql
-    networks:
-      - confirmamed_net
-
   redis:
     image: redis:6.2-alpine
     container_name: confirmamed_redis
@@ -36,15 +14,13 @@ services:
 
   # --- WHATSAPP ENGINE (EVOLUTION API) ---
   evolution:
-    image: atendai/evolution-api:v2.1.1
+    image: evoapicloud/evolution-api:v2.3.7
     container_name: evolution_api
     restart: always
+    entrypoint: ["npm", "run", "start:prod"]
     privileged: true
     user: "root"
     shm_size: '2gb'
-    dns:
-      - 8.8.8.8
-      - 1.1.1.1
     environment:
       - AUTHENTICATION_TYPE=apikey
       - AUTHENTICATION_API_KEY=admin123
@@ -52,56 +28,85 @@ services:
       - SERVER_PORT=8080
       - DATABASE_ENABLED=true
       - DATABASE_PROVIDER=postgresql
-      - DATABASE_CONNECTION_URI=postgresql://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME}?schema=evolution&sslmode=disable
+      - DATABASE_CONNECTION_URI=postgresql://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}?schema=evolution&sslmode=require&pgbouncer=true
       - DATABASE_CONNECTION_CLIENT_NAME=confirmamed_evo
       # Variáveis de persistência v2
       - DATABASE_SAVE_DATA_INSTANCE=true
       - DATABASE_SAVE_DATA_NEW_MESSAGE=true
       - DATABASE_SAVE_DATA_CONTACTS=true
       - DATABASE_SAVE_DATA_CHATS=true
+      - DATABASE_SAVE_INSTANCE=true
       - CACHE_REDIS_ENABLED=true
       - CACHE_REDIS_URI=redis://:${REDIS_PASSWORD}@redis:6379/1
       - CACHE_REDIS_PREFIX_KEY=evolution_v2
-      - LOG_LEVEL=ERROR,WARN,DEBUG,INFO
+      - LOG_LEVEL=DEBUG,INFO,ERROR,WARN
       - WEB_BROWSER_HEADLESS=true
       # Argumentos simplificados para evitar crash de engine
       - WEB_BROWSER_ARGS=--no-sandbox,--disable-setuid-sandbox,--disable-dev-shm-usage,--disable-gpu
+      # Novas Variáveis de Estabilidade (v2.4.1)
+      - WA_BUSINESS_COMPLIANCE=false
+      - CONFIG_SESSION_CHAT_SYNC=false
+      - WEB_BROWSER_CONFIG_SKIP_BROWSERS_CHECK=true
+      # Dashboard Evolution v2
+      - DASHBOARD_ENABLED=${DASHBOARD_ENABLED:-true}
+      - DASHBOARD_USER=${DASHBOARD_USER:-admin}
+      - DASHBOARD_PASSWORD=${DASHBOARD_PASSWORD:-admin123}
+      # Configuração de Webhook Global (Ponta de Retorno)
+      - WEBHOOK_GLOBAL_URL=http://backend:4000/api/webhooks/whatsapp
+      - WEBHOOK_GLOBAL_ENABLED=true
+      - WEBHOOK_EVENTS_MESSAGES_UPSERT=true
+      - WEBHOOK_EVENTS_APPLICATION_STARTUP=true
+      - WEBHOOK_EVENTS_QRCODE_UPDATED=true
+      - WEBHOOK_EVENTS_MESSAGES_UPDATE=true
+      # URL externa para a Evolution se reconhecer
+      - SERVER_URL=${SERVER_URL:-http://localhost:8085}
     ports:
       - "8085:8080"
-    depends_on:
-      db:
-        condition: service_healthy
+    healthcheck:
+      test: [ "CMD", "wget", "--no-verbose", "--tries=1", "--spider", "--header=apikey: admin123", "http://localhost:8080/instance/fetchInstances" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
     volumes:
       - evolution_sessoes:/evolution/instances
     networks:
       confirmamed_net:
         aliases:
           - evolution
+          - ngrok_net
 
   # --- NOSSA APLICAÇÃO ---
   backend:
     build: ./backend
     container_name: confirmamed_api
+    restart: unless-stopped
     env_file: .env
     ports:
       - "4000:4000"
     environment:
-      - DATABASE_URL=postgresql://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME}
-      - DB_HOST=db
+      - DATABASE_URL=postgresql://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}
+      - DB_HOST=${DB_HOST}
+      - DB_PORT=${DB_PORT}
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_NAME=${DB_NAME}
+      - DB_SSL=${DB_SSL}
       - EVOLUTION_URL=http://evolution:8080
+      - WHATSAPP_BASE_URL=http://evolution:8080
     depends_on:
-      db:
-        condition: service_healthy
       redis:
         condition: service_started
     volumes:
       - ./backend:/home/node/app
+      - /home/node/app/node_modules
     networks:
       - confirmamed_net
 
   frontend:
     build: ./frontend
     container_name: confirmamed_web
+    restart: unless-stopped
     ports:
       - "5000:5000"
     env_file: .env
@@ -138,6 +143,9 @@ networks:
     driver: bridge
     driver_opts:
       com.docker.network.driver.mtu: "1350"
+  ngrok_net:
+    # Define ngrok network for unified webhooks
+    driver: bridge
 
 volumes:
   pgdata:

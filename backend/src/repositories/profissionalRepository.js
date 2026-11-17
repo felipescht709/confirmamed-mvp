@@ -37,8 +37,7 @@ const listByUnidade = (unidadeId) => {
       "p.permite_telemedicina",
       "p.conselho",
       "p.numero_conselho",
-      // Removi 'imagem_profissional' pois não vi essa coluna na migration 'create_full_schema'
-      // Se ela existir, pode adicionar de volta.
+      knex.raw("CASE WHEN p.google_refresh_token IS NOT NULL THEN true ELSE false END as google_sync_active")
     );
 };
 
@@ -63,6 +62,7 @@ const getAll = (unidade_id = null) => {
     "p.conselho",
     "p.numero_conselho",
     "p.permite_telemedicina",
+    knex.raw("CASE WHEN p.google_refresh_token IS NOT NULL THEN true ELSE false END as google_sync_active")
   );
 };
 

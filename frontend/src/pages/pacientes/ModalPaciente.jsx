@@ -208,6 +208,7 @@ export default function ModalPaciente({
               </label>
               <input
                 required
+                id="tut-nome-paciente"
                 type="text"
                 value={formData.nome}
                 className="w-full mt-1 p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-brand-blue"
@@ -273,6 +274,7 @@ export default function ModalPaciente({
               <div className="relative">
                 <input
                   required
+                  id="tut-telefone-paciente"
                   type="text"
                   value={formData.telefone}
                   placeholder="(00) 00000-0000"
@@ -373,6 +375,7 @@ export default function ModalPaciente({
             </button>
             <button
               disabled={loading}
+              id="tut-salvar-paciente"
               className="bg-brand-blue text-white px-10 py-3 rounded-2xl font-bold flex items-center gap-2 hover:bg-opacity-90 transition-all"
             >
               {loading ? (

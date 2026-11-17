@@ -6,15 +6,16 @@ const store = async (req, res) => {
   try {
     const {
       profissional_id,
-      unidade_id,
       dia_semana,
       hora_inicio,
       hora_fim,
       duracao_slot_minutos,
     } = req.body;
 
-    // 1. Validação de conflito usando o seu service
-    // Se houver conflito, o service lança um Error que cairá no catch
+    // G3: unidade_id do JWT (não confiar no body — vetor de IDOR)
+    const unidade_id = req.usuario?.unidade_id;
+    if (!unidade_id) return res.status(401).json({ error: "Sessão inválida." });
+
     await agendaConfigService.validarConflitoUnidades(
       profissional_id,
       dia_semana,
@@ -23,7 +24,6 @@ const store = async (req, res) => {
       unidade_id,
     );
 
-    // 2. Persistência
     const id = await repo.create({
       profissional_id,
       unidade_id,
@@ -35,30 +35,26 @@ const store = async (req, res) => {
 
     return res.status(201).json({ id_config_agenda: id });
   } catch (error) {
-    // Tratamento específico para o erro de conflito lançado pelo Service
     if (error.message.includes("Conflito:")) {
       return res.status(409).json({ error: error.message });
     }
-
     console.error(`[AgendaConfigController Error]: ${error.message}`);
-    return res
-      .status(500)
-      .json({ error: "Erro ao configurar horário da agenda." });
+    return res.status(500).json({ error: "Erro ao configurar horário da agenda." });
   }
 };
 
 const index = async (req, res) => {
   try {
-    const { profissional_id, unidade_id } = req.query;
+    // G7: unidade_id do JWT garante isolamento de tenant
+    const unidade_id = req.usuario?.unidade_id;
+    const { profissional_id } = req.query;
     const configs = await repo.getByProfissionalEUnidade(
       profissional_id,
       unidade_id,
     );
     return res.json(configs);
   } catch (error) {
-    return res
-      .status(500)
-      .json({ error: "Erro ao buscar configurações de agenda." });
+    return res.status(500).json({ error: "Erro ao buscar configurações de agenda." });
   }
 };
 

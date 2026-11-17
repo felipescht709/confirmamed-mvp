@@ -42,7 +42,7 @@ const AppointmentModal = ({ appointment, initialSlot, onClose, onSave }) => {
       ? {
           value: appointment.paciente_id,
           label:
-            appointment.paciente_nome || `Paciente #${appointment.paciente_id}`,
+            appointment.resource?.paciente_nome || `Paciente #${appointment.paciente_id}`,
         }
       : null,
   );

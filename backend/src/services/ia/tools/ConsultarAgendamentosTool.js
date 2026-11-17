@@ -17,7 +17,9 @@ const ConsultarAgendamentosTool = {
     },
   },
 
-  async execute({ paciente_id }) {
+  async execute({ paciente_id, unidade_id }) {
+    if (!unidade_id) return "ERRO: Unidade não identificada.";
+
     try {
       const consultas = await knex("consultas")
         .join(
@@ -34,6 +36,7 @@ const ConsultarAgendamentosTool = {
           "profissionais_da_saude.especialidade",
         )
         .where("consultas.paciente_id", paciente_id)
+        .where("consultas.unidade_id", unidade_id)
         .where("consultas.status", "AGENDADO")
         .whereNull("consultas.deleted_at")
         .orderBy("consultas.data_hora_inicio", "asc");

@@ -218,6 +218,7 @@ export default function ModalProfissional({
               </label>
               <input
                 required
+                id="tut-nome-completo-profissional"
                 type="text"
                 value={formData.nome_completo}
                 className="w-full mt-1 p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-brand-blue"
@@ -247,6 +248,7 @@ export default function ModalProfissional({
               </label>
               <input
                 required
+                id="tut-especialidade-profissional"
                 type="text"
                 value={formData.especialidade}
                 className="w-full mt-1 p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none"
@@ -295,6 +297,7 @@ export default function ModalProfissional({
                 Telefone
               </label>
               <input
+                id="tut-telefone-profissional"
                 type="text"
                 placeholder="(00) 00000-0000"
                 value={formData.telefone}
@@ -447,6 +450,7 @@ export default function ModalProfissional({
             </button>
             <button
               disabled={loading}
+              id="tut-salvar-profissional"
               className="bg-brand-blue text-white px-10 py-3 rounded-2xl font-bold flex items-center gap-2 hover:bg-brand-accent transition-all shadow-lg shadow-brand-blue/20"
             >
               {loading ? (

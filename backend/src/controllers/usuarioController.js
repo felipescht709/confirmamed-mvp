@@ -4,7 +4,8 @@ const ROLES = require("../constants/roles");
 
 const store = async (req, res) => {
   try {
-    const { nome, email, senha, role, profissional_id, unidade_id } = req.body;
+    const { nome, email, senha, role, profissional_id, permissoes } = req.body;
+    const unidade_id = req.usuario.unidade_id;
 
     // 1. Validação básica
     if (!nome || !email || !senha || !unidade_id) {
@@ -41,6 +42,7 @@ const store = async (req, res) => {
       senha_hash,
       role: role || ROLES.RECEPCAO,
       unidade_id,
+      permissoes,
       profissional_id:
         role === ROLES.PROFISSIONAL_SAUDE ? profissional_id : null,
     });
@@ -57,7 +59,8 @@ const store = async (req, res) => {
 
 const index = async (req, res) => {
   try {
-    const usuarios = await repo.getAll();
+    // Isolamento Multi-Tenant: Buscar apenas os usuários da unidade logada
+    const usuarios = await repo.getAll(req.usuario.unidade_id);
     return res.json(usuarios);
   } catch (error) {
     return res.status(500).json({ error: "Erro ao listar utilizadores." });
@@ -67,7 +70,7 @@ const index = async (req, res) => {
 const update = async (req, res) => {
   try {
     const { id } = req.params;
-    const { nome, email, senha, role, profissional_id, unidade_id } = req.body;
+    const { nome, email, senha, role, profissional_id, permissoes } = req.body;
 
     const usuarioExistente = await repo.getById(id);
     if (!usuarioExistente) {
@@ -78,8 +81,8 @@ const update = async (req, res) => {
     if (nome) dadosParaAtualizar.nome = nome;
     if (email) dadosParaAtualizar.email = email;
     if (role) dadosParaAtualizar.role = role;
-    if (unidade_id) dadosParaAtualizar.unidade_id = unidade_id;
-    if (profissional_id) dadosParaAtualizar.profissional_id = profissional_id;
+    if (profissional_id !== undefined) dadosParaAtualizar.profissional_id = profissional_id;
+    if (permissoes !== undefined) dadosParaAtualizar.permissoes = permissoes;
 
     // LÓGICA DE SENHA: Se enviou senha nova, faz o hash
     if (senha) {

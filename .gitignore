@@ -11,3 +11,7 @@ build/
 # Logs e Banco de Dados Local
 *.log
 pgdata/
+
+# Credenciais e Chaves GCP
+confirmamed-*.json
+*-service-account*.json

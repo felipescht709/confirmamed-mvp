@@ -1,362 +1,229 @@
-// src/services/ia/AIOrchestrator.js
-const OpenAIProvider = require("./providers/OpenAIProvider");
-const GeminiProvider = require("./providers/GeminiProvider");
-const toolManager = require("./tools/index");
-const piiMasker = require("./security/PIIMasker");
-const knex = require("../../database/db");
-const unidadeRepository = require("../../repositories/unidadeRepository");
-const prompts = require("./prompts/index");
+const { StateGraph, START, END } = require("@langchain/langgraph");
+const { ToolMessage } = require("@langchain/core/messages");
+const { HumanMessage, AIMessage } = require("@langchain/core/messages");
+const db = require("../../database/db");
 const SessionService = require("../core/SessionService");
-const pacienteRepository = require("../../repositories/pacienteRepository");
-const PushService = require("../core/PushService");
 
-class AIOrchestrator {
-  constructor() {
-    this.primaryProvider = new OpenAIProvider();
-    this.fallbackProvider = new GeminiProvider();
-    this.CRITICAL_TOOLS = [
-      "realizar_agendamento",
-      "cancelar_agendamento",
-      "criar_agendamento",
-      "reagendar_consulta",
-    ];
-  }
+// 1. Estado Global e Ferramentas
+const { ConfirmaMedState } = require("./state/ConfirmaMedState");
+const {
+  confirmamedTools,
+  protocolTool,
+  availabilityTool,
+  upsertPacienteTool,
+  criarAgendamentoTool,
+  cancelarConsultaTool,
+  reagendarConsultaTool,
+  confirmarPresencaTool,
+  consultarAgendamentosTool,
+  entrarFilaEsperaTool,
+  solicitarAtendenteTool,
+} = require("./tools");
 
-  /**
-   * MÉTODO PRIVADO: Constrói a blindagem de contexto e regras dinâmicas
-   */
-  _buildContextualInput(params) {
-    const {
-      depth,
-      session,
-      diaSemana,
-      dataLocal,
-      horaLocal,
-      contextoIdentidade,
-      maskedMessage,
-      rawMessage,
-    } = params;
+// 2. Importação dos Nós (Nodes)
+const gatekeeperNode = require("./nodes/GatekeeperNode");
+const brainNode = require("./nodes/BrainNode");
+const fallbackNode = require("./nodes/FallbackNode");
+const supervisorNode = require("./nodes/SupervisorNode");
+const auditLogNode = require("./nodes/AuditLogNode");
 
-    if (depth > 0) return rawMessage;
+// 3. Importação do Roteamento (Edges)
+const {
+  routeFromGatekeeper,
+  routeFromBrain,
+  routeFromTools,
+} = require("./edges/RoutingEdges");
 
-    const pacienteId =
-      session?.contexto_temporario?.paciente_alvo_id || "PENDENTE";
+// Mapa para execução dinâmica com injeção de parâmetros de sessão
+const toolsMap = {
+  verificar_disponibilidade: availabilityTool,
+  consultar_protocolo: protocolTool,
+  upsert_paciente: upsertPacienteTool,
+  criar_agendamento: criarAgendamentoTool,
+  cancelar_consulta: cancelarConsultaTool,
+  reagendar_consulta: reagendarConsultaTool,
+  confirmar_presenca: confirmarPresencaTool,
+  consultar_agendamentos_paciente: consultarAgendamentosTool,
+  entrar_fila_espera: entrarFilaEsperaTool,
+  solicitar_atendente: solicitarAtendenteTool,
+};
 
-    const regrasExecucao = [
-      `# DIRETRIZES DE AGORA (NÃO IGNORE):`,
-      `- PACIENTE ATUAL: ID ${pacienteId}.`,
-      `- MÉDICO: O ID do médico deve ser extraído EXCLUSIVAMENTE da última interação.`,
-      `- AGENDAMENTO: Ao chamar 'criar_agendamento', use EXATAMENTE o profissional_id da disponibilidade.`,
-      `- REAGENDAMENTO: Pegue o ID da consulta na ferramenta 'consultar_agendamentos_paciente'.`,
-      `- HOJE: ${diaSemana}, ${dataLocal}. Hora: ${horaLocal}.`,
-    ];
+const customToolsNode = async (state) => {
+  const { messages, telefoneOrigem, unidadeId } = state;
+  const lastMessage = messages[messages.length - 1];
+  const toolOutputs = [];
 
-    if (session?.estado_atual === "CONFIRMACAO") {
-      regrasExecucao.push(
-        `🚨 STATUS ATUAL: O paciente recebeu um lembrete automático e o status da sessão é 'CONFIRMACAO'.`,
-        `- Se o usuário responder afirmativamente (ex: 'sim', 'vou', 'ok'), EXECUTE OBRIGATORIAMENTE a ferramenta 'confirmar_presenca'.`,
-        `- Pegue o ID da consulta do histórico da conversa.`,
-      );
-    } else if (session?.estado_atual === "TRIAGEM") {
-      regrasExecucao.push(
-        `- Estamos na fase de triagem inicial. Descubra o que o usuário deseja e guie a conversa.`,
-      );
+  for (const toolCall of lastMessage.tool_calls) {
+    const toolName = toolCall.name;
+    const tool = toolsMap[toolName];
+    if (!tool) {
+      toolOutputs.push(new ToolMessage({
+        content: `Erro: ferramenta ${toolName} não encontrada.`,
+        tool_call_id: toolCall.id,
+      }));
+      continue;
     }
-  
-    return `[REGRAS DE OURO]\n${regrasExecucao.join("\n")}\n\n[IDENTIDADE]\n${contextoIdentidade}\n\n[MENSAGEM DO USUÁRIO]\n${maskedMessage}`;
-  }
-
-  /**
-   * MÉTODO PRIVADO: Gerencia a Máquina de Estados (FSM) da identidade do paciente
-   */
-  async _identifyUserContext(telefoneOrigem) {
-    if (!telefoneOrigem) return { contexto: "", session: null };
 
     try {
-      const session = await SessionService.getOrCreateSession(telefoneOrigem);
-      const pacientesVinculados =
-        await pacienteRepository.findAllByTelefone(telefoneOrigem);
-
-      let contexto = "\n# REDE FAMILIAR VINCULADA\n";
-
-      // Auto-seleção se houver apenas um dependente
-      if (
-        pacientesVinculados.length === 1 &&
-        !session.contexto_temporario?.paciente_alvo_id
-      ) {
-        await SessionService.updateSession(telefoneOrigem, "AGENDAMENTO", {
-          paciente_alvo_id: pacientesVinculados[0].id_paciente,
-        });
-        session.contexto_temporario = {
-          ...session.contexto_temporario,
-          paciente_alvo_id: pacientesVinculados[0].id_paciente,
-        };
-      }
-
-      if (pacientesVinculados.length > 0) {
-        contexto += `- Pacientes: ${JSON.stringify(pacientesVinculados)}.\n`;
-      } else {
-        contexto += `- [INFO: Usuário novo. Exija dados para 'upsert_paciente'.]\n`;
-      }
-
-      if (session.contexto_temporario?.paciente_alvo_id) {
-        contexto += `\n🚨 CONFIRMADO: O atendimento é para o ID ${session.contexto_temporario.paciente_alvo_id}. Não pergunte novamente.\n`;
-      }
-
-      return { contexto, session };
-    } catch (err) {
-      console.warn("⚠️ Erro Identificação:", err.message);
-      return { contexto: "\n[Erro ao carregar sessão]", session: null };
-    }
-  }
-
-  /**
-   * Ciclo de Vida Principal
-   */
-  async processMessage(messageData, unidadeId, telefoneOrigem, depth = 0) {
-    if (depth > 3) {
-      PushService.notifyUnidade(
-        unidadeId,
-        "⚠️ IA Solicitando Ajuda",
-        `O paciente ${telefoneOrigem} está confuso ou a IA entrou em loop.`,
-        { url: "/monitor" },
-      ).catch(() => {});
-      return { text: "TRANSFERIR", provider: "SYSTEM_LIMIT" };
-    }
-
-    const { body: rawMessage, history = [] } = messageData;
-    const startTime = Date.now();
-
-    try {
-      const maskedMessage = await piiMasker.mask(
-        rawMessage,
-        telefoneOrigem || "anonimo",
-      );
-
-      const { contexto: contextoIdentidade, session } =
-        depth === 0
-          ? await this._identifyUserContext(telefoneOrigem)
-          : { contexto: "", session: null };
-
-      // 1. Trava de Intervenção Humana (Transbordo)
-      if (session && session.estado_atual === "TRANSBORDO") {
-        console.log(
-          `[AIOrchestrator] Sessão ${telefoneOrigem} em modo TRANSBORDO.`,
-        );
-        return { text: "MODO_HUMANO_ATIVO", provider: "SYSTEM" };
-      }
-
-      // 2. 🔒 Trava LGPD (Consentimento Explícito)
-      if (session && session.aceite_lgpd === false && depth === 0) {
-        const inputClean = rawMessage.toLowerCase().trim();
-        const acceptKeywords = ["aceito", "sim", "concordo", "ok", "pode ser"];
-
-        if (acceptKeywords.some((kw) => inputClean.includes(kw))) {
-          // Atualiza banco e segue o baile
-          await knex("chat_sessions")
-            .where("session_id", session.session_id)
-            .update({
-              aceite_lgpd: true,
-              updated_at: knex.fn.now(),
-            });
-          session.aceite_lgpd = true;
-          // Retorna System Prompt para engajar
-          return {
-            text: "Obrigado! Seu consentimento foi registrado. Como posso ajudar você hoje?",
-            provider: "SYSTEM",
-          };
-        } else {
-          // Interrompe o fluxo da OpenAI e barra o usuário na porta
-          return {
-            text: "Olá! Para podermos realizar agendamentos e acessar seus dados de saúde, precisamos que você aceite nossos Termos de Privacidade e LGPD. Responda *ACEITO* para continuar.",
-            provider: "SYSTEM",
-          };
-        }
-      }
-
-      // Dados temporais
-      const agora = new Date();
-      const dataLocal = agora.toLocaleDateString("pt-BR", {
-        timeZone: "America/Sao_Paulo",
-      });
-      const horaLocal = agora.toLocaleTimeString("pt-BR", {
-        timeZone: "America/Sao_Paulo",
-        hour: "2-digit",
-        minute: "2-digit",
-      });
-      const diaSemana = agora.toLocaleDateString("pt-BR", {
-        weekday: "long",
-        timeZone: "America/Sao_Paulo",
-      });
-
-      // Constrói o Input usando o novo método
-      const contextualInput = this._buildContextualInput({
-        depth,
-        session,
-        diaSemana,
-        dataLocal,
-        horaLocal,
-        contextoIdentidade,
-        maskedMessage,
-        rawMessage,
-      });
-
-      const systemPrompt = await this.buildSystemPrompt(unidadeId);
-      let providerUsed = "OPENAI";
-      let aiResponse = null;
-
-      try {
-        aiResponse = await this.primaryProvider.generateResponse(
-          systemPrompt,
-          contextualInput,
-          toolManager.getTools(),
-          history,
-        );
-      } catch (error) {
-        providerUsed = "GEMINI";
-        aiResponse = await this.fallbackProvider.generateResponse(
-          systemPrompt,
-          contextualInput,
-        );
-      }
-
-      if (this.isToolCall(aiResponse)) {
-        const toolCallData = this.parseSafeJson(aiResponse);
-        const calls =
-          toolCallData.tool_calls ||
-          (toolCallData.function_call ? [toolCallData.function_call] : []);
-        let currentHistory = [
-          ...history,
-          { role: "user", content: contextualInput },
-          { role: "assistant", content: null, tool_calls: calls },
-        ];
-
-        const toolResultsMessages = [];
-        for (const functionCall of calls) {
-          const toolName = functionCall.function?.name || functionCall.name;
-          const args = this.parseSafeJson(
-            functionCall.function?.arguments || functionCall.arguments,
-          );
-
-          const toolInstance = toolManager.findTool(toolName);
-          const toolResult = toolInstance
-            ? await toolInstance.execute({
-                ...args,
-                unidade_id: unidadeId,
-                telefone_sessao: telefoneOrigem,
-              })
-            : "ERRO: Tool inexistente.";
-
-          toolResultsMessages.push({
-            role: "tool",
-            tool_call_id: functionCall.id || "call_id",
-            name: toolName,
-            content: String(toolResult),
-          });
-        }
-
-        return this.processMessage(
-          {
-            body: "Resultado processado.",
-            history: [...currentHistory, ...toolResultsMessages],
-          },
-          unidadeId,
-          telefoneOrigem,
-          depth + 1,
-        );
-      }
-
-      const finalOutput = this.applyHardFilters(aiResponse, maskedMessage);
-      await this.logAudit(
-        maskedMessage,
-        systemPrompt,
-        finalOutput,
-        providerUsed,
-        { aprovado: true },
-        startTime,
-      );
-
-      return { text: finalOutput, provider: providerUsed };
-    } catch (error) {
-      console.error("💀 Erro Orquestrador:", error);
-      
-      PushService.notifyUnidade(
-        unidadeId,
-        "🚨 Erro Crítico na IA",
-        `Falha de processamento no atendimento de ${telefoneOrigem}. Assuma via Monitor.`,
-        { url: "/monitor" },
-      ).catch(() => {});
-
-      return {
-        text: "Desculpe, tive um problema técnico.",
-        provider: "CRITICAL_ERROR",
+      // Injeta telefone_sessao e unidade_id nos argumentos de execução!
+      const args = {
+        ...toolCall.args,
+        telefone_sessao: telefoneOrigem,
+        unidade_id: unidadeId,
       };
+
+      console.log(`[AIOrchestrator Node:tools] Executando ${toolName} com args:`, JSON.stringify(toolCall.args));
+
+      let result;
+      if (typeof tool.execute === "function") {
+        result = await tool.execute(args);
+      } else if (typeof tool.call === "function") {
+        result = await tool.call(args);
+      } else if (typeof tool.func === "function") {
+        result = await tool.func(args);
+      } else {
+        result = "Erro: executor da ferramenta não implementado.";
+      }
+
+      console.log(`[AIOrchestrator Node:tools] Resultado de ${toolName}:`, String(result).substring(0, 150));
+
+      toolOutputs.push(new ToolMessage({
+        content: String(result),
+        name: toolName,
+        tool_call_id: toolCall.id,
+      }));
+    } catch (err) {
+      console.error(`❌ Erro ao executar a tool ${toolName}:`, err);
+      toolOutputs.push(new ToolMessage({
+        content: `Erro técnico na ferramenta: ${err.message}`,
+        tool_call_id: toolCall.id,
+      }));
     }
   }
-  // MÉTODO PÚBLICO: Transcrição de Áudio usando OpenAI Whisper
-  async transcribeAudio(audioBuffer) {
-    try {
-      // OpenAI Whisper exige um arquivo com extensão/mime-type
-      const formData = new FormData();
-      const blob = new Blob([audioBuffer], { type: "audio/ogg" });
-      formData.append("file", blob, "recording.ogg");
-      formData.append("model", "whisper-1");
 
-      const response = await axios.post(
-        "https://api.openai.com/v1/audio/transcriptions",
-        formData,
-        {
-          headers: {
-            Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-            ...formData.getHeaders(),
-          },
-        },
-      );
+  return { messages: toolOutputs };
+};
 
-      return response.data.text;
-    } catch (error) {
-      console.error("WHISPER_TRANSCRIPTION_ERROR:", error);
-      throw new Error("Falha ao processar áudio.");
-    }
-  }
+/**
+ * Construção do Grafo (FSM + ReAct)
+ */
+const builder = new StateGraph(ConfirmaMedState)
+  // Registro de Nós
+  .addNode("gatekeeperNode", gatekeeperNode)
+  .addNode("brainNode", brainNode)
+  .addNode("tools", customToolsNode)
+  .addNode("fallbackNode", fallbackNode)
+  .addNode("supervisorNode", supervisorNode)
+  .addNode("auditLogNode", auditLogNode)
 
-  // --- MÉTODOS AUXILIARES ---
-  async buildSystemPrompt(unidadeId) {
-    const unidade = await unidadeRepository.getById(unidadeId);
-    return prompts.BASE_SYSTEM(unidade, unidade?.configuracoes_ia || {});
-  }
-  isToolCall(response) {
-    return (
-      typeof response === "string" &&
-      response.trim().startsWith("{") &&
-      (response.includes('"tool_calls"') ||
-        response.includes('"function_call"'))
+  // Fluxo e Roteamento
+  .addEdge(START, "gatekeeperNode")
+  .addConditionalEdges("gatekeeperNode", routeFromGatekeeper)
+  .addConditionalEdges("brainNode", routeFromBrain)
+  .addConditionalEdges("tools", routeFromTools)
+  .addEdge("fallbackNode", "supervisorNode") // Se deu ruim e caiu no Gemini, audita o Gemini também
+  .addEdge("supervisorNode", "auditLogNode") // Tudo passa pela Auditoria, que sempre deságua no Log
+  .addEdge("auditLogNode", END); // Gravação no banco encerra o fluxo
+
+// A Magia do LangGraph: Compila todos os nós e regras em um Executável (Pregel)
+const langGraphApp = builder.compile();
+
+/**
+ * Orquestrador Principal
+ * Ponto único de entrada consumido pelo WebhookController / WhatsappService
+ */
+class AIOrchestrator {
+  async processMessage(telefoneOrigem, unidadeId, textoUsuario) {
+    console.log(
+      `🤖 [AIOrchestrator] Iniciando Processamento para ${telefoneOrigem} na Unidade ${unidadeId}`,
     );
-  }
-  parseSafeJson(data) {
+
     try {
-      return typeof data === "string" ? JSON.parse(data) : data;
-    } catch (e) {
-      return {};
-    }
-  }
-  applyHardFilters(response, userInput) {
-    if (response.startsWith("{") && response.includes("tool_calls"))
-      return "Erro no processamento da agenda.";
-    return response;
-  }
-  async logAudit(input, prompt, output, provider, verdict, startTime) {
-    try {
-      await knex("ai_audit_logs").insert({
-        input_usuario: input,
-        prompt_enviado: prompt.substring(0, 1500),
-        output_ia: output,
-        provider_usado: provider,
-        latency_ms: Date.now() - startTime,
-        data_hora: new Date(),
+      // 1. Carrega ou cria a sessão no banco para recuperar o histórico
+      const session = await SessionService.getOrCreateSession(telefoneOrigem, unidadeId);
+      
+      // 2. Carrega as últimas 10 mensagens de auditoria para memória conversacional
+      const historyLogs = await db("ai_audit_logs")
+        .where("session_id", session.session_id)
+        .orderBy("data_hora", "asc")
+        .limit(10)
+        .select("input_usuario", "output_ia");
+
+      const historyMessages = [];
+      for (const log of historyLogs) {
+        if (log.input_usuario && log.input_usuario !== "[SISTEMA]" && log.input_usuario !== "[ADMIN]") {
+          historyMessages.push(new HumanMessage(log.input_usuario));
+        }
+        if (log.output_ia) {
+          historyMessages.push(new AIMessage(log.output_ia));
+        }
+      }
+
+      // Injeção do Estado Inicial (Gatilho com Histórico de Memória)
+      const initialState = {
+        sessionId: session.session_id,
+        telefoneOrigem,
+        unidadeId,
+        messages: [...historyMessages, new HumanMessage(textoUsuario)],
+      };
+
+      // Executa a FSM do LangGraph (Recursão Limits imposta por segurança)
+      const finalState = await langGraphApp.invoke(initialState, {
+        recursionLimit: 20,
       });
-    } catch (e) {}
+
+      console.log("DEBUG ORCHESTRATOR state:", {
+        estadoSessao: finalState.estadoSessao,
+        aceiteLgpd: finalState.aceiteLgpd,
+        iso_audit_trail: finalState.iso_audit_trail
+      });
+
+      // Validação Crítica Pós-Execução (Compliance ISO 42001)
+      if (finalState.iso_audit_trail?.auditoria_reprovada) {
+        console.warn(
+          "🚫 [AIOrchestrator] Resposta bloqueada pelo SupervisorNode (Risco Clínico).",
+        );
+        return "Desculpe, por diretrizes de segurança clínica, não posso responder a essa solicitação. Deseja que eu repasse à nossa equipe?";
+      }
+
+      // Se a LGPD não foi aceita, tentamos usar o retorno gerado pela IA (que explica os termos, etc.)
+      if (finalState.aceiteLgpd === false) {
+        const lastMessage = finalState.messages[finalState.messages.length - 1];
+        if (lastMessage && lastMessage.content) {
+          return lastMessage.content;
+        }
+        
+        let nomeClinica = "ConfirmaMed";
+        try {
+          const clinica = await db("unidades_atendimento")
+            .where("id_unidade", unidadeId)
+            .first();
+          if (clinica?.nome_fantasia) {
+            nomeClinica = clinica.nome_fantasia;
+          }
+        } catch (e) {
+          console.error("Erro ao buscar clinica no AIOrchestrator:", e);
+        }
+
+        return `Olá! Bem-vindo ao ${nomeClinica}. Para podermos iniciar o seu atendimento em conformidade com a Lei Geral de Proteção de Dados (LGPD), precisamos que você confirme o aceite dos nossos Termos de Uso e Política de Privacidade. Você aceita? (Por favor, responda com 'Sim' ou 'Aceito')`;
+      }
+
+      // Se transbordou, o próprio Controller cuida de ignorar
+      if (finalState.estadoSessao === "TRANSBORDO") {
+        return null;
+      }
+
+      // Devolve ao mensageiro o conteúdo gerado
+      const lastMessage = finalState.messages[finalState.messages.length - 1];
+      return lastMessage.content;
+    } catch (error) {
+      console.error(
+        "❌ [AIOrchestrator] Falha Crítica na Execução do Grafo:",
+        error,
+      );
+      return "Desculpe, nosso sistema de atendimento está passando por uma instabilidade técnica. Por favor, aguarde alguns minutos e tente novamente.";
+    }
   }
 }
 
-module.exports = AIOrchestrator;
+module.exports = new AIOrchestrator();

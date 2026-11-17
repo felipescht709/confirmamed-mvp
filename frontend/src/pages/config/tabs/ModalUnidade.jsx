@@ -26,7 +26,12 @@ export default function ModalUnidade({
 
   useEffect(() => {
     if (selectedData && isOpen) {
-      setFormData({ ...selectedData });
+      // Garantir que nenhum campo venha nulo do banco para o estado do React
+      const sanitizedData = { ...selectedData };
+      Object.keys(formData).forEach((key) => {
+        if (sanitizedData[key] === null) sanitizedData[key] = "";
+      });
+      setFormData(sanitizedData);
     } else {
       setFormData({
         nome_fantasia: "",
@@ -143,17 +148,32 @@ export default function ModalUnidade({
           className="p-8 space-y-4 max-h-[80vh] overflow-y-auto"
         >
           <div className="grid grid-cols-2 gap-4">
-            <div className="col-span-2">
+            <div className="col-span-1">
               <label className="text-xs font-bold text-slate-400 uppercase">
                 Nome Fantasia
               </label>
               <input
                 required
+                id="tut-nome-unidade"
                 type="text"
-                value={formData.nome_fantasia}
+                value={formData.nome_fantasia || ""}
                 className="w-full mt-1 p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-brand-blue"
                 onChange={(e) =>
                   setFormData({ ...formData, nome_fantasia: e.target.value })
+                }
+              />
+            </div>
+
+            <div className="col-span-1">
+              <label className="text-xs font-bold text-slate-400 uppercase">
+                Razão Social
+              </label>
+              <input
+                type="text"
+                value={formData.razao_social || ""}
+                className="w-full mt-1 p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-brand-blue"
+                onChange={(e) =>
+                  setFormData({ ...formData, razao_social: e.target.value })
                 }
               />
             </div>
@@ -164,7 +184,7 @@ export default function ModalUnidade({
               </label>
               <input
                 type="text"
-                value={formData.cnpj}
+                value={formData.cnpj || ""}
                 placeholder="00.000.000/0000-00"
                 className="w-full mt-1 p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-brand-blue"
                 onChange={handleCNPJInput}
@@ -177,11 +197,27 @@ export default function ModalUnidade({
               </label>
               <input
                 required
+                id="tut-telefone-unidade"
                 type="text"
-                value={formData.telefone_principal}
+                value={formData.telefone_principal || ""}
                 placeholder="(00) 00000-0000"
                 className="w-full mt-1 p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-brand-blue"
                 onChange={handlePhoneInput}
+              />
+            </div>
+
+            <div>
+              <label className="text-xs font-bold text-slate-400 uppercase">
+                E-mail de Contato
+              </label>
+              <input
+                type="email"
+                value={formData.email_contato || ""}
+                placeholder="clinica@email.com"
+                className="w-full mt-1 p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-brand-blue"
+                onChange={(e) =>
+                  setFormData({ ...formData, email_contato: e.target.value })
+                }
               />
             </div>
 
@@ -195,7 +231,7 @@ export default function ModalUnidade({
               </label>
               <input
                 type="text"
-                value={formData.cep}
+                value={formData.cep || ""}
                 onBlur={handleCEPBlur}
                 placeholder="00000-000"
                 className="w-full mt-1 p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-brand-blue"
@@ -209,7 +245,7 @@ export default function ModalUnidade({
               </label>
               <input
                 type="text"
-                value={formData.numero}
+                value={formData.numero || ""}
                 className="w-full mt-1 p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-brand-blue"
                 onChange={(e) =>
                   setFormData({ ...formData, numero: e.target.value })
@@ -217,16 +253,30 @@ export default function ModalUnidade({
               />
             </div>
 
-            <div className="col-span-2">
+            <div className="col-span-1">
               <label className="text-xs font-bold text-slate-400 uppercase">
                 Logradouro
               </label>
               <input
                 type="text"
-                value={formData.logradouro}
+                value={formData.logradouro || ""}
                 className="w-full mt-1 p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-brand-blue"
                 onChange={(e) =>
                   setFormData({ ...formData, logradouro: e.target.value })
+                }
+              />
+            </div>
+
+            <div className="col-span-1">
+              <label className="text-xs font-bold text-slate-400 uppercase">
+                Bairro
+              </label>
+              <input
+                type="text"
+                value={formData.bairro || ""}
+                className="w-full mt-1 p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-brand-blue"
+                onChange={(e) =>
+                  setFormData({ ...formData, bairro: e.target.value })
                 }
               />
             </div>
@@ -237,7 +287,7 @@ export default function ModalUnidade({
               </label>
               <input
                 type="text"
-                value={formData.cidade}
+                value={formData.cidade || ""}
                 className="w-full mt-1 p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-brand-blue"
                 onChange={(e) =>
                   setFormData({ ...formData, cidade: e.target.value })
@@ -252,7 +302,7 @@ export default function ModalUnidade({
               <input
                 type="text"
                 maxLength={2}
-                value={formData.uf}
+                value={formData.uf || ""}
                 className="w-full mt-1 p-3 bg-slate-50 border border-slate-200 rounded-xl uppercase text-center font-semibold"
                 onChange={(e) =>
                   setFormData({ ...formData, uf: e.target.value.toUpperCase() })
@@ -271,6 +321,7 @@ export default function ModalUnidade({
             </button>
             <button
               disabled={loading}
+              id="tut-salvar-unidade"
               className="bg-brand-blue text-white px-10 py-3 rounded-2xl font-bold flex items-center gap-2 hover:bg-opacity-90 transition-all"
             >
               {loading ? (

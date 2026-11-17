@@ -1,0 +1,24 @@
+# Regras de Arquitetura e Desenvolvimento - ConfirmaMED
+
+## 1. Regra Absoluta: Isolamento Multi-tenantQu
+- O sistema é um SaaS Multi-tenant. 
+- **NUNCA** crie uma query de busca (SELECT), atualização (UPDATE) ou deleção (DELETE) nas tabelas principais (`consultas`, `pacientes`, `profissionais_da_saude`, `agenda_bloqueios`, `fila_espera`) sem incluir o filtro obrigatório por `unidade_id`.
+- Ao criar novos registros, garanta que `unidade_id` seja inserido.
+
+## 2. Banco de Dados e Migrations (Knex.js)
+- O banco oficial é PostgreSQL. O query builder é o Knex.js.
+- **NUNCA** escreva queries em SQL puro diretamente nos controllers ou services. Utilize sempre a sintaxe do Knex.js dentro da pasta `src/repositories/`.
+- Ao criar novas tabelas ou colunas, gere um arquivo de migration na pasta `backend/src/database/migrations`.
+- Respeite as nomenclaturas do banco: snake_case para tabelas e colunas (ex: `data_hora_inicio`, `id_consulta`).
+
+## 3. Orquestração de IA (LangChain / LangGraph)
+- O fluxo de IA segue o padrão de Máquina de Estados (FSM). 
+- O estado global está definido em `backend/src/services/ia/state/ConfirmaMedState.js`.
+- Alterações no fluxo de decisão da IA devem ser feitas nos arquivos da pasta `nodes` ou `edges`.
+- Toda nova ferramenta (Tool) da IA deve ser registrada em `backend/src/services/ia/tools` e deve exigir o parâmetro `unidade_id`.
+
+## 4. Padrões de Código e Commits
+- **Backend:** Arquitetura em camadas. Controllers não devem ter lógica de negócio complexa ou queries de banco; chame os Services ou Repositories.
+- **Frontend:** React com Vite e Tailwind CSS. Utilize componentes funcionais e hooks.
+- Padrão de idioma: O código (variáveis, funções) pode misturar inglês (ex: `checkAvailability`) e português (ex: `id_profissional`), mas priorize manter o padrão do arquivo que está sendo editado.
+- Mensagens de Commit: Use conventional commits (feat:, fix:, refactor:, chore:).

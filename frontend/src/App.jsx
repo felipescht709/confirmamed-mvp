@@ -2,6 +2,7 @@ import React from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { Toaster } from "react-hot-toast";
 import Login from "./pages/Login";
+import Signup from "./pages/Signup";
 import Monitor from "./pages/Monitor";
 import Layout from "./layouts/DefaultLayout";
 import Config from "./pages/config/Config";
@@ -50,6 +51,7 @@ function App() {
           <Routes>
             {/* --- ROTAS PÚBLICAS --- */}
             <Route path="/login" element={<Login />} />
+            <Route path="/cadastro" element={<Signup />} />
             <Route path="/recuperar-senha" element={<RecuperarSenha />} />
 
             {/* ESTA É A REDUNDÂNCIA DO CLIENTE: 
@@ -70,6 +72,7 @@ function App() {
               <Route path="agenda" element={<Agenda />} />
               <Route path="monitor" element={<Monitor />} />
               <Route path="monitor/:sessionId" element={<Monitor />} />
+              <Route path="atendimento/:sessionId" element={<Monitor />} />
               <Route path="pacientes" element={<Pacientes />} />
               <Route path="procedimentos" element={<ProcedimentosEPlanos />} />
               <Route path="config" element={<Config />} />

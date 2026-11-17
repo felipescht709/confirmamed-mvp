@@ -8,11 +8,14 @@ module.exports = {
       host: process.env.DB_HOST || "db",
       user: process.env.DB_USER || "postgres",
       password: process.env.DB_PASSWORD || "postgres",
-      database: "confirmamed",
-      port: 5432,
+      database: process.env.DB_NAME || "confirmamed",
+      port: Number(process.env.DB_PORT) || 5432,
+      ssl: process.env.DB_SSL === "true" ? { rejectUnauthorized: false } : false,
       // Garante que o driver do Node entenda que o banco opera em UTC
       timezone: "UTC",
+      options: "-c search_path=public,extensions",
     },
+    searchPath: ['public', 'extensions'],
     pool: {
       min: 2,
       max: 10,

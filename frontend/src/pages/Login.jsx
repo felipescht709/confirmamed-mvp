@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Bot, Lock, Mail, Eye, EyeOff } from "lucide-react";
 import api from "../services/api";
@@ -6,6 +6,23 @@ import { useAuth } from "../context/AuthContext";
 import { Link } from "react-router-dom";
 
 export default function Login() {
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("refresh") === "true") {
+      // 1. Limpa caches estáticos do navegador se suportado
+      if ("caches" in window) {
+        caches.keys().then((names) => {
+          for (let name of names) {
+            caches.delete(name);
+          }
+        });
+      }
+      // 2. Remove o refresh param da URL e faz reload forçado
+      window.history.replaceState({}, document.title, window.location.pathname);
+      window.location.reload();
+    }
+  }, []);
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -134,6 +151,13 @@ export default function Login() {
             {loading ? "Verificando..." : "Acessar Plataforma"}{" "}
             <Bot size={20} />
           </button>
+
+          <div className="text-center text-sm text-slate-500 pt-2">
+            Ainda não tem conta?{" "}
+            <Link to="/cadastro" className="text-sky-500 font-bold hover:underline hover:text-sky-600">
+              Cadastre-se para o Trial
+            </Link>
+          </div>
         </form>
       </div>
     </div>

@@ -1,19 +1,31 @@
 const nodemailer = require("nodemailer");
 
-const transporter = nodemailer.createTransport({
-  host: process.env.EMAIL_HOST || "sandbox.smtp.mailtrap.io",
-  port: process.env.EMAIL_PORT || 2525,
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
-  },
-});
+let transporter;
+
+if (process.env.MAILTRAP_TOKEN) {
+  const { MailtrapTransport } = require("mailtrap");
+  transporter = nodemailer.createTransport(
+    MailtrapTransport({
+      token: process.env.MAILTRAP_TOKEN,
+    })
+  );
+} else {
+  transporter = nodemailer.createTransport({
+    host: process.env.EMAIL_HOST || "sandbox.smtp.mailtrap.io",
+    port: process.env.EMAIL_PORT || 2525,
+    auth: {
+      user: process.env.EMAIL_USER,
+      pass: process.env.EMAIL_PASS,
+    },
+  });
+}
 
 const sendResetEmail = async (email, token) => {
   const resetLink = `http://localhost:5173/recuperar-senha?token=${token}`;
+  const fromEmail = process.env.EMAIL_FROM || '"ConfirmaMED 🏥" <no-reply@confirmamed.com>';
 
   const mailOptions = {
-    from: '"ConfirmaMED 🏥" <no-reply@confirmamed.com>',
+    from: fromEmail,
     to: email,
     subject: "Recuperação de Senha - ConfirmaMED",
     html: `

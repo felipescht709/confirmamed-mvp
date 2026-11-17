@@ -8,30 +8,40 @@ const store = async (req, res) => {
     console.log("DADOS RECEBIDOS:", req.body);
 
     const { nome_completo, cpf } = req.body;
+    const unidade_id = req.usuario?.unidade_id; // G2: fonte confiável
 
     if (!nome_completo || !cpf) {
       return res.status(400).json({ error: "Nome e CPF são obrigatórios." });
     }
+    if (!unidade_id) {
+      return res.status(401).json({ error: "Sessão inválida." });
+    }
 
     const id = await repo.create(req.body);
 
-    console.log("SUCESSO: Profissional cadastrado com ID:", id);
+    // G2: Cria vínculo profissional <-> unidade automaticamente
+    await knex('profissional_unidade_vinculo').insert({
+      profissional_id: id,
+      unidade_id,
+    });
+
+    console.log("SUCESSO: Profissional cadastrado com ID:", id, "e vinculado à unidade", unidade_id);
     return res.status(201).json({ id_profissional_saude: id });
   } catch (error) {
-    // ESTE LOG É O MAIS IMPORTANTE:
     console.error("ERRO DETALHADO NO BANCO:", error.message);
     console.error("STACK TRACE:", error.stack);
-
     return res.status(500).json({
       error: "Erro ao cadastrar profissional.",
-      details: error.message, // Temporário para debug
+      details: error.message,
     });
   }
 };
 
 const index = async (req, res) => {
   try {
-    const { unidade_id } = req.query; // Pega o ID enviado pelo useAgenda.js
+    // G6: unidade_id OBRIGATORIAMENTE do JWT (nunca do query param — vetor de IDOR)
+    const unidade_id = req.usuario?.unidade_id;
+    if (!unidade_id) return res.status(401).json({ error: "Sessão inválida." });
     const profissionais = await repo.getAll(unidade_id);
     return res.json(profissionais);
   } catch (error) {
@@ -43,11 +53,19 @@ const index = async (req, res) => {
 const update = async (req, res) => {
   try {
     const { id } = req.params;
+    const unidade_id = req.usuario?.unidade_id;
     const data = req.body;
+
+    // G11: valida que o profissional pertence à unidade do usuário logado
+    const vinculo = await knex('profissional_unidade_vinculo')
+      .where({ profissional_id: id, unidade_id })
+      .first();
+    if (!vinculo) {
+      return res.status(404).json({ error: "Profissional não encontrado nesta unidade." });
+    }
+
     await repo.update(id, data);
-    return res.json({
-      message: "Dados do profissional atualizados com sucesso.",
-    });
+    return res.json({ message: "Dados do profissional atualizados com sucesso." });
   } catch (error) {
     console.error("ERRO AO ATUALIZAR:", error.message);
     return res.status(500).json({ error: "Erro ao atualizar profissional." });
@@ -56,6 +74,14 @@ const update = async (req, res) => {
 
 const remove = async (req, res) => {
   try {
+    const unidade_id = req.usuario?.unidade_id;
+    // G11: valida posse antes de deletar
+    const vinculo = await knex('profissional_unidade_vinculo')
+      .where({ profissional_id: req.params.id, unidade_id })
+      .first();
+    if (!vinculo) {
+      return res.status(404).json({ error: "Profissional não encontrado nesta unidade." });
+    }
     await repo.softDelete(req.params.id);
     return res.status(204).send();
   } catch (error) {

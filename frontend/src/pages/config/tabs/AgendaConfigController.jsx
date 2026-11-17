@@ -205,7 +205,7 @@ const GradeHoraria = () => {
               return (
                 <div
                   key={dia.id}
-                  className={`grid grid-cols-12 gap-4 p-4 items-center transition-all duration-300 ${isAtivo ? "bg-white" : "bg-slate-50/50 grayscale opacity-80"}`}
+                  className={`grid grid-cols-12 gap-4 p-4 items-center transition-all duration-300 ${isAtivo ? "bg-white" : "bg-slate-50/50 dark:bg-slate-900/30 grayscale opacity-80"}`}
                 >
                   {/* Coluna Dia + Toggle */}
                   <div className="col-span-3 md:col-span-2 flex items-center gap-3">

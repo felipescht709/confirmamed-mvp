@@ -72,6 +72,10 @@ export const useAgenda = () => {
           paciente_id: evt.paciente_id,
           profissional_id: evt.profissional_id,
           id_procedimento: evt.id_procedimento,
+          id_convenio_plano: evt.id_convenio_plano,
+          telemedicina: evt.telemedicina,
+          tipo_pagamento: evt.tipo_pagamento,
+          observacoes: evt.observacoes,
           status: evt.status,
           title: `${evt.paciente_nome} - ${evt.procedimento_nome || "Consulta"}`,
           start: new Date(evt.data_hora_inicio),
@@ -79,8 +83,11 @@ export const useAgenda = () => {
           resource: {
             type: "CONSULTA",
             status: evt.status,
+            status_confirmacao: evt.status_confirmacao,
             profissional_nome: evt.profissional_nome,
             paciente_nome: evt.paciente_nome,
+            observacoes: evt.observacoes,
+            solicitante_nome: evt.solicitante_nome
           },
         }));
 

@@ -55,6 +55,7 @@ export default function Pacientes() {
           </div>
           <button 
             onClick={() => { setSelectedPaciente(null); setModalOpen(true); }}
+            id="tut-novo-paciente"
             className="bg-brand-blue text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2 hover:bg-opacity-90"
           >
             <Plus size={18} /> Novo Paciente

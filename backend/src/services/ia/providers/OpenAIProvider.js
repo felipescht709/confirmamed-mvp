@@ -1,10 +1,43 @@
 //ia/providers/OpenAIProvider.js
 const { OpenAI } = require("openai");
+const fs = require("fs");
+const path = require("path");
+const os = require("os");
 
 class OpenAIProvider {
   constructor() {
     this.client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
     this.model = "gpt-4o-mini";
+  }
+
+  /**
+   * Transcreve um áudio (Buffer) para texto usando Whisper
+   */
+  async transcribeAudio(audioBuffer) {
+    const tempDir = os.tmpdir();
+    const tempFile = path.join(tempDir, `audio_${Date.now()}.ogg`);
+    
+    try {
+      console.log(`📡 [Whisper] Gravando arquivo temporário: ${tempFile}`);
+      fs.writeFileSync(tempFile, audioBuffer);
+      
+      console.log(`📡 [Whisper] Enviando para OpenAI...`);
+      const response = await this.client.audio.transcriptions.create({
+        file: fs.createReadStream(tempFile),
+        model: "whisper-1",
+      });
+
+      console.log(`📡 [Whisper] Resposta recebida: ${response.text.substring(0, 50)}...`);
+      return response.text;
+    } catch (error) {
+      console.error("❌ [OpenAI Whisper Error]:", error);
+      throw error;
+    } finally {
+      if (fs.existsSync(tempFile)) {
+        fs.unlinkSync(tempFile);
+        console.log(`📡 [Whisper] Arquivo temporário removido.`);
+      }
+    }
   }
 
   async generateResponse(systemPrompt, userMessage, tools = [], history = []) {

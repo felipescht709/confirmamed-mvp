@@ -1,107 +1,43 @@
-// src/services/ia/tools/AvailabilityTool.js
+const { DynamicStructuredTool } = require("@langchain/core/tools");
+const { z } = require("zod");
 const AvailabilityService = require("../../core/AvailabilityService");
 
-const AvailabilityTool = {
-  definition: {
-    type: "function",
-    function: {
-      name: "verificar_disponibilidade",
-      description:
-        "Verifica horários livres. Se o paciente pedir 'qualquer dia' ou 'próximo livre', passe a data de amanhã. O sistema buscará automaticamente os próximos 7 dias.",
-      parameters: {
-        type: "object",
-        properties: {
-          profissional_id: {
-            type: "integer",
-            description: "ID do profissional",
-          },
-          unidade_id: {
-            type: "integer",
-            description: "ID da unidade (default: 1)",
-          },
-          data: { type: "string", description: "Data no formato YYYY-MM-DD" },
-        },
-        required: ["profissional_id", "data"],
-      },
-    },
-  },
-
-  async execute({ profissional_id, unidade_id, data }) {
-    if (!profissional_id) {
-      return "ERRO: Profissional não identificado.";
-    }
-
+/**
+ * AvailabilityTool - Consulta de Agenda
+ * Retorna os "slots" livres sem que a IA precise fazer cálculos de datetime ou fuso horário.
+ */
+const availabilityTool = new DynamicStructuredTool({
+  name: "verificar_disponibilidade",
+  description:
+    "Verifica os horários livres de um médico/equipamento em uma data específica.",
+  schema: z.object({
+    profissional_id: z.number().describe("ID do profissional ou equipamento"),
+    unidade_id: z.number().describe("ID da unidade de atendimento"),
+    data: z.string().describe("Data para buscar horários, formato YYYY-MM-DD"),
+  }),
+  func: async ({ profissional_id, unidade_id, data }, config) => {
     try {
-      const dataAlvo = new Date(data + "T00:00:00-03:00");
-      const hoje = new Date();
-      hoje.setHours(0, 0, 0, 0);
-
-      if (dataAlvo < hoje) {
-        return "FALHA LÓGICA: A data solicitada já passou. Peça para o paciente escolher uma data a partir de hoje.";
+      const slots = await AvailabilityService.getAvailableSlots(profissional_id, unidade_id, data);
+      
+      if (slots && slots.length > 0) {
+        const formatted = slots.map(s => s.hora_formatada).join(", ");
+        return `Horários livres para o profissional ID ${profissional_id} no dia ${data}: ${formatted}. Peça ao paciente para escolher um deles.`;
       }
 
-      const idUnidade = unidade_id || 1;
-
-      // 🛠️ NOVO FLUXO: Smart Scan (Busca Automática de Próximos Dias)
-      let dataAtualPesquisa = data;
-      let slotsLivres = [];
-      let diasTentados = 0;
-      const limiteBuscaDias = 7; // Quantos dias para frente o backend deve procurar
-
-      while (diasTentados < limiteBuscaDias) {
-        console.log(
-          `🔎 [TOOL] Verificando agenda para: ${dataAtualPesquisa} | Méd: ${profissional_id}`,
-        );
-
-        slotsLivres = await AvailabilityService.getAvailableSlots(
-          profissional_id,
-          idUnidade,
-          dataAtualPesquisa,
-        );
-
-        if (slotsLivres && slotsLivres.length > 0) {
-          break; // Achou horário livre! Para a busca.
-        }
-
-        // Não achou? Adiciona 1 dia na data e tenta de novo no loop
-        let [year, month, day] = dataAtualPesquisa.split("-");
-        let dateObj = new Date(
-          Number(year),
-          Number(month) - 1,
-          Number(day) + 1,
-        );
-
-        let y = dateObj.getFullYear();
-        let m = String(dateObj.getMonth() + 1).padStart(2, "0");
-        let d = String(dateObj.getDate()).padStart(2, "0");
-
-        dataAtualPesquisa = `${y}-${m}-${d}`;
-        diasTentados++;
+      // Se a agenda do dia estiver vazia/cheia, busca o dia com horários mais próximo nos próximos 15 dias
+      const proximo = await AvailabilityService.getNextAvailableInRange(profissional_id, unidade_id, data, 15);
+      if (proximo && proximo.slots && proximo.slots.length > 0) {
+        const formatted = proximo.slots.map(s => s.hora_formatada).join(", ");
+        return `Não há horários disponíveis para o dia ${data}. O dia disponível mais próximo é ${proximo.data} com os seguintes horários: ${formatted}. Ofereça esta alternativa ao paciente.`;
       }
 
-      // Se passou 7 dias e não achou nada
-      if (!slotsLivres || slotsLivres.length === 0) {
-        return `A agenda deste profissional está TOTALMENTE FECHADA ou lotada para os próximos 7 dias a partir de ${data}. Informe isso ao paciente e pergunte se ele deseja olhar para a próxima semana ou escolher outro profissional.`;
-      }
-
-      // Prepara os horários encontrados
-      const horariosFormatados = slotsLivres
-        .map((slot) => slot.hora_formatada)
-        .join(", ");
-
-      // Se achou no MESMO dia que o usuário pediu
-      if (dataAtualPesquisa === data) {
-        return `SUCESSO! Dia ${data} possui horários livres. Ofereça estes horários ao paciente: ${horariosFormatados}.`;
-      }
-      // Se o backend precisou pular dias para achar uma vaga
-      else {
-        return `O dia ${data} que o usuário pediu estava lotado/fechado. MAS, a busca inteligente encontrou que a PRÓXIMA DATA LIVRE é dia ${dataAtualPesquisa}. Ofereça esta nova data e os seguintes horários: ${horariosFormatados}.`;
-      }
+      return `Não há horários livres para o profissional ID ${profissional_id} nos próximos 15 dias a partir de ${data}. Pergunte se o paciente gostaria de entrar na fila de espera.`;
     } catch (error) {
-      console.error("❌ [TOOL] Erro na AvailabilityTool:", error);
-      return "Erro técnico interno ao consultar a agenda. Diga ao paciente que o sistema está instável.";
+      console.error("Erro no AvailabilityTool:", error);
+      return `Erro ao consultar disponibilidade no banco de dados para a data ${data}: ${error.message}`;
     }
   },
-};
+});
 
-module.exports = AvailabilityTool;
+module.exports = availabilityTool;
+

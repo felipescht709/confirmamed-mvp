@@ -143,10 +143,11 @@ export default function ModalProcedimento({
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="md:col-span-2">
               <label className="text-[10px] font-bold text-slate-400 uppercase">
-                Nome do Procedimento
+                Nome do Procedimento / Exame
               </label>
               <input
                 required
+                id="tut-nome-procedimento"
                 type="text"
                 value={formData.nome_procedimento}
                 className="w-full mt-1 p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-brand-blue"
@@ -197,6 +198,7 @@ export default function ModalProcedimento({
                   R$
                 </span>
                 <input
+                  id="tut-valor-procedimento"
                   type="text"
                   value={formData.valor}
                   className="w-full mt-1 p-3 pl-10 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-brand-blue font-mono"
@@ -354,6 +356,7 @@ export default function ModalProcedimento({
             </button>
             <button
               disabled={loading}
+              id="tut-salvar-procedimento"
               className="bg-brand-blue text-white px-10 py-3 rounded-2xl font-bold flex items-center gap-2 hover:shadow-lg transition-all disabled:opacity-50"
             >
               {loading ? (

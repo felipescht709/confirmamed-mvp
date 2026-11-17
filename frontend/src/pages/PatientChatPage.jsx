@@ -80,16 +80,29 @@ const PatientChatPage = () => {
   return (
     <div className="flex flex-col h-screen bg-slate-50 font-sans">
       {/* Header Fixo */}
-      <header className="bg-brand-blue p-4 text-white shadow-md flex items-center gap-3">
-        <div className="bg-white/20 p-2 rounded-full">
-          <Bot size={24} className="text-brand-green" />
+      <header className="bg-brand-blue p-4 text-white shadow-md flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="bg-white/20 p-2 rounded-full">
+            <Bot size={24} className="text-brand-green" />
+          </div>
+          <div>
+            <h1 className="font-bold text-sm uppercase tracking-tight">
+              Atendimento ConfirmaMED
+            </h1>
+            <p className="text-[10px] opacity-80">Canal do Paciente • Online</p>
+          </div>
         </div>
-        <div>
-          <h1 className="font-bold text-sm uppercase tracking-tight">
-            Atendimento ConfirmaMED
-          </h1>
-          <p className="text-[10px] opacity-80">Online agora</p>
-        </div>
+
+        {/* Link Direto para o Cockpit do Gestor */}
+        <a 
+          href={`/monitor/${sessionId}`}
+          className="text-xs font-bold bg-white/10 hover:bg-white/20 border border-white/20 text-white px-3 py-1.5 rounded-xl transition-all flex items-center gap-2 shadow-xs"
+        >
+          <span>Visão do Gestor</span>
+          <span className="text-[9px] bg-emerald-400 text-slate-900 px-1.5 py-0.5 rounded font-black uppercase">
+            Cockpit
+          </span>
+        </a>
       </header>
 
       {/* Alerta de Intervenção Humana */}

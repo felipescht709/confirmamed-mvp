@@ -3,7 +3,7 @@ const knex = require("../database/db.js");
 
 // --- CONVÊNIOS ---
 const createConvenio = (data) => knex('convenios').insert(data).returning("*");
-const getConvenios = () => knex('convenios').where({ ativo: true });
+const getConvenios = (unidade_id) => knex('convenios').where({ ativo: true, unidade_id });
 const updateConvenio = (id, data) =>
   knex('convenios').where({ id_convenio: id }).update(data);
 
@@ -16,8 +16,8 @@ const getConvenioById = (id) =>
 // --- PLANOS ---
 const createPlano = (data) =>
   knex('convenio_planos').insert(data).returning("*");
-const getPlanosPorConvenio = (convenio_id) =>
-  knex('convenio_planos').where({ convenio_id, ativo: true });
+const getPlanosPorConvenio = (convenio_id, unidade_id) =>
+  knex('convenio_planos').where({ convenio_id, ativo: true, unidade_id });
 
 const updatePlano = (id, data) =>
   knex('convenio_planos').where({ id_plano: id }).update(data);

@@ -18,8 +18,8 @@ api.interceptors.response.use(
       error.response?.status === 401 &&
       !error.config.url.includes("/login")
     ) {
-      localStorage.removeItem("token");
-      window.location.href = "/login";
+      localStorage.clear();
+      window.location.href = "/login?refresh=true";
     }
     return Promise.reject(error);
   },

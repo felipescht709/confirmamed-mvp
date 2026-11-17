@@ -22,32 +22,37 @@ const ConfirmarPresencaTool = {
     },
   },
 
-  async execute({ id_consulta, telefone_sessao }) {
+  async execute({ id_consulta, telefone_sessao, unidade_id }) {
+    if (!unidade_id) return "ERRO: Unidade não identificada.";
+
     try {
       if (!id_consulta) return "ERRO: id_consulta não fornecido.";
 
       console.log(
-        `[TOOL] ConfirmarPresenca: Iniciando para consulta ID ${id_consulta} via telefone ${telefone_sessao}`,
+        `[TOOL] ConfirmarPresenca: Iniciando para consulta ID ${id_consulta} na unidade ${unidade_id}`,
       );
 
-      // 2. Trava de Segurança: Garante que a consulta pertence a este WhatsApp
+      // 2. Trava de Segurança Multi-tenant e Telefone
       const consulta = await knex("consultas as c")
         .join("pacientes as p", "c.paciente_id", "p.id_paciente")
         .where("c.id_consulta", id_consulta)
-        // .andWhere("p.telefone", telefone_sessao) // 🔒 Descomente isso em PROD para evitar invasões!
+        .where("c.unidade_id", unidade_id)
+        .andWhere("p.telefone", telefone_sessao.split("@")[0].replace(/\D/g, "")) // 🔒 Ativada para segurança máxima SaaS
         .select("c.id_consulta", "c.status")
         .first();
 
       if (!consulta) {
-        return "ERRO: Consulta não encontrada ou não pertence a este paciente. Peça para o paciente confirmar o dia e a hora.";
+        return "ERRO: Consulta não encontrada nesta rede ou não pertence a este telefone.";
       }
 
       if (consulta.status === "CONFIRMADA") {
         return "AVISO: A consulta já constava como CONFIRMADA. Diga ao paciente que está tudo certo e a clínica o aguarda.";
       }
 
-      // 3. Efetiva a confirmação
-      await knex("consultas").where({ id_consulta }).update({
+      // 3. Efetiva a confirmação na unidade correta
+      await knex("consultas")
+        .where({ id_consulta, unidade_id })
+        .update({
         status: "CONFIRMADA", // Mudei de CONFIRMADO para CONFIRMADA (ajuste conforme seu ENUM do banco)
         // atualizado_em: knex.fn.now(), // Descomente se a coluna existir no seu db
       });

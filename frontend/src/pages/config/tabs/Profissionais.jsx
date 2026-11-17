@@ -55,6 +55,7 @@ export default function Profissionais() {
             setSelectedPro(null);
             setModalOpen(true);
           }}
+          id="tut-novo-profissional"
           className="bg-brand-blue text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2"
         >
           <UserPlus size={18} /> Novo Cadastro

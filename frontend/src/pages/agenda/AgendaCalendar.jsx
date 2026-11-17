@@ -8,7 +8,8 @@ import "react-big-calendar/lib/css/react-big-calendar.css";
 import "react-big-calendar/lib/addons/dragAndDrop/styles.css";
 import { useAgenda } from "../../hooks/useAgenda";
 import AppointmentModal from "../../components/AppointmentModal";
-import CustomAgendaEvent from "../../components/CustomAgendaEvent"; // Importe o novo componente
+import ConsultaDetailsModal from "../../components/ConsultaDetailsModal";
+import CustomAgendaEvent from "../../components/CustomAgendaEvent";
 import { Plus, Filter, RefreshCw } from "lucide-react";
 
 moment.locale("pt-br");
@@ -19,6 +20,7 @@ const AgendaCalendar = () => {
   const { events, filters, setFilters, profissionais, refreshAgenda, loading } =
     useAgenda();
   const [showModal, setShowModal] = useState(false);
+  const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [selectedSlot, setSelectedSlot] = useState(null);
   const [selectedEvent, setSelectedEvent] = useState(null);
 
@@ -42,25 +44,49 @@ const AgendaCalendar = () => {
       return { className: "rounded-md border-none opacity-80", style };
     }
 
-    // Cores baseadas no status (Tailwind palette)
-    switch (status) {
-      case "CONFIRMADO":
-        style.backgroundColor = "#10b981"; // emerald-500
-        style.borderLeftColor = "#064e3b"; // Emerald 900 
-        break;
-      case "CANCELADO":
-        style.backgroundColor = "#ef4444"; // red-500
-        style.borderLeftColor = "#7f1d1d"; // red-900
-        break;
-      case "EM_ATENDIMENTO":
-        style.backgroundColor = "#f59e0b"; // amber-500
-        style.borderLeftColor = "#78350f"; // amber-900
-        break;
-      case "AGENDADO":
-      default:
-        style.backgroundColor = "#3b82f6"; // blue-500
-        style.borderLeftColor = "#1e3a8a"; // blue-900
-        break;
+    const statusConfirmacao = event.resource?.status_confirmacao || "PENDENTE";
+
+    // Cores baseadas no status de CONFIRMAÇÃO quando a consulta está AGENDADA
+    if (status === "AGENDADO") {
+      switch (statusConfirmacao) {
+        case "CONFIRMADO":
+          style.backgroundColor = "#10b981"; // emerald-500
+          style.borderLeftColor = "#064e3b"; // emerald-900
+          break;
+        case "CANCELADO":
+          style.backgroundColor = "#ef4444"; // red-500
+          style.borderLeftColor = "#7f1d1d"; // red-900
+          break;
+        case "REAGENDAR":
+          style.backgroundColor = "#8b5cf6"; // violet-500
+          style.borderLeftColor = "#4c1d95"; // violet-900
+          break;
+        case "PENDENTE":
+        default:
+          style.backgroundColor = "#3b82f6"; // blue-500
+          style.borderLeftColor = "#1e3a8a"; // blue-900
+          break;
+      }
+    } else {
+      // Cores para outros status gerais (EM_ATENDIMENTO, FINALIZADO)
+      switch (status) {
+        case "CANCELADO":
+          style.backgroundColor = "#ef4444"; // red-500
+          style.borderLeftColor = "#7f1d1d"; // red-900
+          break;
+        case "EM_ATENDIMENTO":
+          style.backgroundColor = "#f59e0b"; // amber-500
+          style.borderLeftColor = "#78350f"; // amber-900
+          break;
+        case "FINALIZADO":
+          style.backgroundColor = "#64748b"; // slate-500
+          style.borderLeftColor = "#0f172a"; // slate-900
+          break;
+        default:
+          style.backgroundColor = "#3b82f6"; // blue-500
+          style.borderLeftColor = "#1e3a8a"; // blue-900
+          break;
+      }
     }
 
     return { className, style };
@@ -76,7 +102,7 @@ const AgendaCalendar = () => {
     if (event.resource?.type === "BLOQUEIO") return;
     setSelectedEvent(event);
     setSelectedSlot(null);
-    setShowModal(true);
+    setShowDetailsModal(true); // Abre visualização primeiro
   };
 
   // Componentes customizados do calendário
@@ -185,6 +211,17 @@ const AgendaCalendar = () => {
           }}
         />
       </div>
+
+      {showDetailsModal && (
+        <ConsultaDetailsModal
+          appointment={selectedEvent}
+          onClose={() => setShowDetailsModal(false)}
+          onEdit={() => {
+            setShowDetailsModal(false);
+            setShowModal(true);
+          }}
+        />
+      )}
 
       {showModal && (
         <AppointmentModal

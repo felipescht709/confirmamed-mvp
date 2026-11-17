@@ -34,11 +34,14 @@ const FilaEsperaService = {
         await whatsappService.sendMessage(pacienteFila.telefone, msg);
 
         // 4. Trava a fila (para não oferecer a mesma vaga pra duas pessoas ao mesmo tempo)
-        await knex("fila_espera").where({ id_fila: pacienteFila.id_fila }).update({ status: "NOTIFICADO" });
+        await knex("fila_espera").where({ id_fila: pacienteFila.id_fila }).update({ 
+          status: "NOTIFICADO",
+          notificado_em: knex.fn.now()
+        });
 
         // 5. Injeta o contexto na IA para ela saber do que se trata se ele disser "SIM"
-        await SessionService.getOrCreateSession(pacienteFila.telefone);
-        await SessionService.updateSession(pacienteFila.telefone, "OFERTA_VAGA", {
+        await SessionService.getOrCreateSession(pacienteFila.telefone, vaga.unidade_id);
+        await SessionService.updateSession(pacienteFila.telefone, vaga.unidade_id, "OFERTA_VAGA", {
           paciente_alvo_id: pacienteFila.id_paciente,
           profissional_id: vaga.profissional_id,
           data_hora_inicio: vaga.data_hora_inicio,
@@ -48,6 +51,25 @@ const FilaEsperaService = {
       }
     } catch (error) {
       console.error("❌ [FilaEsperaService] Erro ao processar Gap Filling:", error);
+    }
+  },
+
+  async verificarNotificacoesExpiradas() {
+    try {
+      console.log("🕒 [FilaEsperaService] Verificando notificações expiradas (24h)...");
+      const expirados = await knex("fila_espera")
+        .where("status", "NOTIFICADO")
+        .andWhere("notificado_em", "<=", knex.raw("NOW() - INTERVAL '24 HOURS'"));
+
+      for (const fila of expirados) {
+        await knex("fila_espera")
+          .where("id_fila", fila.id_fila)
+          .update({ status: "EXPIRADO" });
+          
+        console.log(`[FilaEsperaService] Fila ID ${fila.id_fila} expirou por falta de resposta em 24h.`);
+      }
+    } catch (error) {
+      console.error("Erro em verificarNotificacoesExpiradas:", error);
     }
   }
 };

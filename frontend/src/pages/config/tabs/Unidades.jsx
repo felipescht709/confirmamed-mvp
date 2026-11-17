@@ -51,6 +51,7 @@ export default function Unidades() {
             setSelectedUnidade(null);
             setModalOpen(true);
           }}
+          id="tut-nova-unidade"
           className="bg-brand-blue text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2 hover:bg-opacity-90 transition-all"
         >
           <Plus size={18} /> Nova Unidade

@@ -16,6 +16,17 @@ export const AuthProvider = ({ children }) => {
       const savedUser = localStorage.getItem("@ConfirmaMED:usuario");
 
       if (authStatus === "true" && token) {
+        const loginTimestamp = localStorage.getItem("login_timestamp");
+        if (loginTimestamp) {
+          const elapsed = Date.now() - Number(loginTimestamp);
+          if (elapsed >= 18 * 60 * 60 * 1000) {
+            localStorage.clear();
+            setAuthenticated(false);
+            setUser(null);
+            window.location.href = "/login?refresh=true";
+            return;
+          }
+        }
         setAuthenticated(true);
         if (savedUser) setUser(JSON.parse(savedUser));
       } else {
@@ -24,12 +35,28 @@ export const AuthProvider = ({ children }) => {
       setLoading(false);
     };
     checkAuth();
-  }, []);
+
+    const interval = setInterval(() => {
+      const loginTimestamp = localStorage.getItem("login_timestamp");
+      if (loginTimestamp) {
+        const elapsed = Date.now() - Number(loginTimestamp);
+        if (elapsed >= 18 * 60 * 60 * 1000) {
+          localStorage.clear();
+          setAuthenticated(false);
+          setUser(null);
+          window.location.href = "/login?refresh=true";
+        }
+      }
+    }, 60000);
+
+    return () => clearInterval(interval);
+  }, [authenticated]);
 
   // Agora o login recebe o token E os dados do usuário vindo do backend
   const login = (token, userData) => {
     localStorage.setItem("token", token);
     localStorage.setItem("auth", "true");
+    localStorage.setItem("login_timestamp", Date.now().toString());
 
     // Salva o usuário inteiro
     localStorage.setItem("@ConfirmaMED:usuario", JSON.stringify(userData));
@@ -47,7 +74,7 @@ export const AuthProvider = ({ children }) => {
     localStorage.clear(); // Isso já limpa o token e as chaves @ConfirmaMED
     setAuthenticated(false);
     setUser(null);
-    window.location.href = "/login";
+    window.location.href = "/login?refresh=true";
   };
 
   return (

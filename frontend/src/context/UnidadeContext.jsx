@@ -55,6 +55,17 @@ export const UnidadeProvider = ({ children }) => {
     localStorage.setItem("@ConfirmaMED:unidade_id", unidade.id_unidade);
   };
 
+  const atualizarConfiguracaoIAUnidade = (config_ia) => {
+    if (!unidadeSelecionada) return;
+    const configFormatada = typeof config_ia === "object" ? JSON.stringify(config_ia) : config_ia;
+    const updated = {
+      ...unidadeSelecionada,
+      configuracoes_ia: configFormatada
+    };
+    setUnidadeSelecionada(updated);
+    setUnidades(prev => prev.map(u => u.id_unidade === updated.id_unidade ? updated : u));
+  };
+
   return (
     <UnidadeContext.Provider
       value={{
@@ -63,6 +74,7 @@ export const UnidadeProvider = ({ children }) => {
         unidades,
         loadingUnidades,
         mudarUnidade,
+        atualizarConfiguracaoIAUnidade,
         isUnidadeSelected: !!unidadeSelecionada,
       }}
     >

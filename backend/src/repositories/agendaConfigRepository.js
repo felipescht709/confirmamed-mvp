@@ -2,7 +2,7 @@
 const knex = require("../database/db.js");
 
 const create = async (data) => {
-  const [id] = await knex('agenda_configuracao_horario')
+  const [row] = await knex('agenda_configuracao_horario')
     .insert({
       profissional_id: data.profissional_id,
       unidade_id: data.unidade_id,
@@ -13,7 +13,7 @@ const create = async (data) => {
       ativo: true,
     })
     .returning("id_config_agenda");
-  return id;
+  return row.id_config_agenda;
 };
 
 const getByProfissionalEUnidade = (profissional_id, unidade_id) => {

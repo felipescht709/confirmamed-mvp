@@ -88,6 +88,7 @@ function ProcedimentosContent() {
                     <button
                         onClick={() => { setSelectedProcedimento(null); setModalOpen(true); }}
                         disabled={!selectedUnidade}
+                        id="tut-novo-procedimento"
                         className="bg-brand-blue text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2 hover:bg-opacity-90 disabled:bg-opacity-50"
                     >
                         <Plus size={18} /> Novo Procedimento

@@ -1,5 +1,6 @@
 // backend/src/controllers/unidadeController.js
 const repo = require("../repositories/unidadeRepository");
+const knex = require("../database/db");
 
 const store = async (req, res) => {
   try {
@@ -27,7 +28,7 @@ const store = async (req, res) => {
 
 const index = async (req, res) => {
   try {
-    const unidades = await repo.getAll();
+    const unidades = await repo.getAllDaRede(req.usuario.unidade_id);
     return res.json(unidades);
   } catch (error) {
     return res.status(500).json({ error: "Erro ao listar unidades." });
@@ -47,20 +48,23 @@ const show = async (req, res) => {
 
 const update = async (req, res) => {
   try {
-    const updateData = { ...req.body };
+    const { id } = req.params;
 
-    // Mapeia o nome do Frontend para a coluna real do Banco de Dados
-    if (updateData.configuracoes_ia) {
-      // O Knex lidará com o JSON/JSONB automaticamente se estiver configurado,
-      // mas JSON.stringify garante segurança extra no insert/update.
-      updateData.config_ia = JSON.stringify(updateData.configuracoes_ia);
-      delete updateData.configuracoes_ia; // Remove a chave fantasma
+    // G8: Garante que o usuário só pode editar a SUA própria unidade
+    const unidade_id = req.usuario?.unidade_id;
+    if (String(unidade_id) !== String(id)) {
+      return res.status(403).json({ error: "Acesso negado: você não tem permissão para editar esta unidade." });
     }
 
-    // Previne atualização acidental do ID
+    const updateData = { ...req.body };
+
+    if (updateData.configuracoes_ia) {
+      updateData.configuracoes_ia = typeof updateData.configuracoes_ia === "object" ? JSON.stringify(updateData.configuracoes_ia) : updateData.configuracoes_ia;
+    }
+
     delete updateData.id_unidade;
 
-    await repo.update(req.params.id, updateData);
+    await repo.update(id, updateData);
     return res.json({ message: "Configurações atualizadas com sucesso." });
   } catch (error) {
     console.error(`[UnidadeController.update] Erro: ${error.message}`);
@@ -90,7 +94,7 @@ const updateConfigIA = async (req, res) => {
         await knex('unidades_atendimento')
             .where('id_unidade', id)
             .update({ 
-                config_ia: JSON.stringify(config_ia),
+                configuracoes_ia: JSON.stringify(config_ia),
                 atualizado_em: knex.fn.now() 
             });
 

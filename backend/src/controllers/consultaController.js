@@ -1,9 +1,10 @@
 // src/controllers/consultaController.js
 const repo = require("../repositories/consultaRepository");
 const procedimentoRepo = require("../repositories/procedimentosRepository");
-const moment = require("moment-timezone");
 const knex = require("../database/db");
 const FilaEsperaService = require("../services/core/FilaEsperaService");
+const PushService = require("../services/core/PushService");
+const googleCalendarService = require("../services/googleCalendarService");
 
 /**
  * Lista consultas com filtros (Usado pela Agenda do Frontend)
@@ -12,9 +13,14 @@ const index = async (req, res) => {
   try {
     const filters = { ...req.query };
 
-    // Regra de segurança: Se for médico, filtra apenas os dele
-    if (req.usuarioRole === "MEDICO") {
-      filters.profissional_id = req.profissionalId;
+    // Regra de segurança: Se não tem permissão para ver agenda geral, força o ID do profissional logado
+    if (req.usuario && req.usuario.permissoes && !req.usuario.permissoes.ver_agenda_geral) {
+      if (req.usuario.profissional_id) {
+        filters.profissional_id = req.usuario.profissional_id;
+      } else {
+        // Se não tem permissão de ver agenda geral E não é um profissional, ele não vê nada
+        return res.json([]);
+      }
     }
 
     const consultas = await repo.getAll(filters);
@@ -120,13 +126,11 @@ const store = async (req, res) => {
         data_hora_fim: fim.toDate(),
         valor_consulta: procedimento.valor || 0,
         status: "AGENDADO",
-
-        // Sanitização de entradas (evita erro de sintaxe SQL para strings vazias)
+        origem: "MANUAL",
         id_convenio_plano: id_convenio_plano || null,
         tipo_pagamento: tipo_pagamento || "PARTICULAR",
         observacoes: observacoes || null,
         telemedicina: telemedicina || false,
-
         criado_em: new Date(),
       })
       .returning("id_consulta");
@@ -135,6 +139,50 @@ const store = async (req, res) => {
     const novoId = inserted[0]?.id_consulta || inserted[0];
 
     await trx.commit();
+
+    // Notifica em tempo real (Firebase)
+    PushService.notifyUnidade(
+      unidade_id,
+      "📅 Novo Agendamento Recebido",
+      `Novo paciente agendado para as ${inicio.format("HH:mm")}.`,
+      { tipo: "NOVO_AGENDAMENTO", id_consulta: String(novoId) }
+    ).catch(() => {});
+
+    // --- Integração Google Calendar (Assíncrona para não travar a resposta) ---
+    (async () => {
+      try {
+        const profissional = await knex("profissionais_da_saude").where({ id_profissional_saude: profissional_id }).first();
+        if (profissional && profissional.google_refresh_token) {
+          const calendar = googleCalendarService.getCalendarApi(profissional.google_refresh_token);
+          const paciente = await knex("pacientes").where({ id_paciente }).first();
+          
+          const eventResponse = await calendar.events.insert({
+            calendarId: 'primary',
+            requestBody: {
+              summary: `[ConfirmaMED] Consulta: ${paciente ? paciente.nome : 'Paciente'}`,
+              description: observacoes || "Agendado via plataforma ConfirmaMED",
+              start: {
+                dateTime: inicio.toISOString(),
+                timeZone: 'America/Sao_Paulo',
+              },
+              end: {
+                dateTime: fim.toISOString(),
+                timeZone: 'America/Sao_Paulo',
+              },
+            },
+          });
+
+          // Salva o ID do evento na tabela
+          if (eventResponse.data && eventResponse.data.id) {
+            await knex("consultas")
+              .where({ id_consulta: novoId })
+              .update({ google_event_id: eventResponse.data.id });
+          }
+        }
+      } catch (err) {
+        console.error("Erro ao sincronizar com Google Agenda:", err);
+      }
+    })();
 
     return res.status(201).json({
       id_consulta: novoId,
@@ -167,14 +215,38 @@ const update = async (req, res) => {
 const cancel = async (req, res) => {
   try {
     const { id } = req.params;
+    const unidade_id = req.usuario?.unidade_id; // A3: Trava multi-tenant
 
-    // Seu código original que cancela a consulta...
-    await knex("consultas")
-      .where({ id_consulta: id })
+    if (!unidade_id) return res.status(401).json({ error: "Sessão inválida." });
+
+    const rows = await knex("consultas")
+      .where({ id_consulta: id, unidade_id })
       .update({ status: "CANCELADO" });
 
-    // 🚀 O GATILHO DO GAP FILLING (Roda solto em background)
+    if (rows === 0) {
+      return res.status(404).json({ error: "Consulta não encontrada nesta unidade." });
+    }
+
     FilaEsperaService.processarVagaLiberada(id);
+
+    // --- Deleta do Google Calendar se existir ---
+    (async () => {
+      try {
+        const consulta = await knex("consultas").where({ id_consulta: id }).first();
+        if (consulta && consulta.google_event_id) {
+          const profissional = await knex("profissionais_da_saude").where({ id_profissional_saude: consulta.profissional_id }).first();
+          if (profissional && profissional.google_refresh_token) {
+            const calendar = googleCalendarService.getCalendarApi(profissional.google_refresh_token);
+            await calendar.events.delete({
+              calendarId: 'primary',
+              eventId: consulta.google_event_id
+            });
+          }
+        }
+      } catch (err) {
+        console.error("Erro ao deletar do Google Agenda:", err);
+      }
+    })();
 
     return res.json({ message: "Consulta cancelada." });
   } catch (error) {

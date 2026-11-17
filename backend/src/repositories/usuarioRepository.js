@@ -8,6 +8,13 @@ const findByEmail = (email) => {
     .first();
 };
 
+const getById = (id) => {
+  return knex('usuarios_sistema')
+    .where({ id_usuario: id })
+    .whereNull("deleted_at")
+    .first();
+};
+
 const create = async (dados) => {
   // O ID retornado será o id_usuario conforme o novo schema
   const [id] = await knex('usuarios_sistema')
@@ -18,6 +25,7 @@ const create = async (dados) => {
       role: dados.role,
       unidade_id: dados.unidade_id,
       profissional_id: dados.profissional_id || null,
+      permissoes: typeof dados.permissoes === 'object' ? JSON.stringify(dados.permissoes) : dados.permissoes,
       ativo: true,
     })
     .returning("id_usuario");
@@ -33,11 +41,15 @@ const getAll = (unidade_id) => {
     "email",
     "role",
     "profissional_id",
+    "permissoes",
     "ativo",
   );
 };
 
 const update = (id, dados) => {
+  if (dados.permissoes && typeof dados.permissoes === 'object') {
+    dados.permissoes = JSON.stringify(dados.permissoes);
+  }
   return knex('usuarios_sistema').where({ id_usuario: id }).update(dados);
 };
 
@@ -47,4 +59,4 @@ const softDelete = (id) => {
     .update({ deleted_at: knex.fn.now(), ativo: false });
 };
 
-module.exports = { create, findByEmail, getAll, update, softDelete };
+module.exports = { create, findByEmail, getAll, getById, update, softDelete };

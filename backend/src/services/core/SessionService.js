@@ -5,9 +5,10 @@ class SessionService {
   /**
    * Busca ou cria a sessão atual do WhatsApp.
    */
-  static async getOrCreateSession(telefone) {
+  static async getOrCreateSession(telefone, unidadeId) {
     let session = await knex("chat_sessions")
       .where("paciente_telefone", telefone)
+      .where("unidade_id", unidadeId) // 🔒 Multi-tenant
       .where("expires_at", ">", knex.fn.now())
       .first();
 
@@ -15,6 +16,7 @@ class SessionService {
       session = {
         session_id: uuidv4(),
         paciente_telefone: telefone,
+        unidade_id: unidadeId, // 🔒 Multi-tenant
         estado_atual: "TRIAGEM",
         contexto_temporario: {}, // Guarda paciente_alvo_id, etc.
         expires_at: knex.raw("NOW() + INTERVAL '24 HOURS'"),
@@ -27,18 +29,32 @@ class SessionService {
   /**
    * Atualiza o estado da conversa e salva o ID do paciente alvo
    */
-  static async updateSession(telefone, estadoAtual, contextoParcial = {}) {
-    const session = await this.getOrCreateSession(telefone);
+  static async updateSession(telefone, unidadeId, estadoAtual, contextoParcial = {}) {
+    const session = await this.getOrCreateSession(telefone, unidadeId);
 
     // Mescla o contexto antigo com o novo (ex: preserva o paciente_alvo_id)
     const novoContexto = { ...session.contexto_temporario, ...contextoParcial };
 
     await knex("chat_sessions")
       .where("paciente_telefone", telefone)
+      .where("unidade_id", unidadeId)
       .update({
         estado_atual: estadoAtual,
         contexto_temporario: novoContexto,
         expires_at: knex.raw("NOW() + INTERVAL '24 HOURS'"), // Renova o TTL
+      });
+  }
+
+  /**
+   * Concede o aceite da LGPD para a sessão
+   */
+  static async acceptLgpd(telefone, unidadeId) {
+    await knex("chat_sessions")
+      .where("paciente_telefone", telefone)
+      .where("unidade_id", unidadeId)
+      .update({
+        aceite_lgpd: true,
+        updated_at: knex.fn.now()
       });
   }
 }

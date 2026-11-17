@@ -1,141 +1,109 @@
-🧠 ConfirmaMED AI Core - Documentação Técnica (v3.0)
-Versão: 3.0 (Personalizada & Integrada)
-Responsável: Arquitetura de Software
-Última Atualização: Fev/2026
+# 🧠 ConfirmaMED AI Core - Documentação Técnica (LangGraph - v4.0)
 
-1. Visão Geral da Arquitetura
-   O módulo de IA do ConfirmaMED opera sob uma arquitetura de Redundância, Supervisão Adversária e Personalização Multi-Tenant. Diferente de chatbots tradicionais, ele não depende de um único provedor, possui camadas de segurança clínica e se adapta ao tom de voz de cada clínica.
+**Versão:** 4.0 (Arquitetura de Grafos / LangGraph)
+**Responsável:** Arquitetura de Software / Engenharia de IA
 
-Topologia "Dual AI"
-IA Primária (Cérebro): OpenAI (gpt-4o). Responsável pela lógica, empatia e decisão de ferramentas (Function Calling).
+---
 
-IA Secundária (Auditor/Backup): Google Gemini (gemini-1.5-flash). Responsável por auditar as decisões da IA primária e assumir o controle em caso de falha (Failover).
+## 1. Visão Geral da Arquitetura
 
-Fluxo de Dados Simplificado
-Snippet de código
-[WhatsApp] -> [WebhookController] -> [Identifica Clínica & Configs]
-|
-[Carrega Sessão FSM]
-|
-[AIOrchestrator]
-|
-(PII Masking)
-|
-[Tenta OpenAI] --(Erro?)--> [Fallback Gemini]
-|
-[Decisão da IA]
-|
-[Auditoria Gemini] --(Reprovado?)--> [Bloqueio]
-|
-[Execução SQL (Tools)] -> [Resposta] 2. Estrutura de Diretórios (src/services/ia)
-Plaintext
-src/services/ia/
-├── AIOrchestrator.js # O "Gerente". Ponto único de entrada. Gerencia Failover, Logs e Personalização.
-├── providers/ # Adaptadores para APIs externas (Design Pattern: Adapter).
-│ ├── AIProvider.js # Interface Abstrata (Contrato).
-│ ├── OpenAIProvider.js # Implementação GPT-4o (Stateless / Chat Completions).
-│ └── GeminiProvider.js # Implementação Gemini Flash (Audit & Backup).
-├── security/
-│ └── PIIMasker.js # Middleware de Anonimização (LGPD). Remove CPFs/Emails.
-├── tools/ # Ferramentas SQL (As "Mãos" da IA).
-│ ├── AvailabilityTool.js # Consulta slots livres (Reusa AvailabilityService).
-│ ├── ProtocolTool.js # Busca preparos de exames (RAG).
-│ └── SchedulingTool.js # Realiza o INSERT na tabela consultas.
-└── prompts/ # System Prompts Dinâmicos (Templates).
-└── index.js # Funções que geram prompts baseados na config da clínica. 3. Componentes Chave e Manutenção
-3.1. AI Orchestrator (AIOrchestrator.js)
-É o coração do sistema. Ele não sabe "pensar", ele sabe "quem chamar" e "como configurar".
+A arquitetura de IA do ConfirmaMED utiliza o **LangGraph** para orquestrar fluxos complexos, transformando a interação numa **Máquina de Estados Finitos (FSM)**. O foco central desta arquitetura é garantir Rastreabilidade e Compliance com a **ISO/IEC 42001** (Sistemas de Gestão de IA) e a **LGPD**, através do padrão de "Adversarial AI" (Uma IA auditando a outra).
 
-Injeção Dinâmica: Recebe a unitConfig (regras da clínica) e injeta no Template de Prompt antes de chamar a IA.
+### 1.1. O Estado Global (`ConfirmaMedState.js`)
 
-Circuit Breaker: Se primary falhar, chama secondary.
+Tudo o que flui pelo grafo passa pelo `ConfirmaMedState`. Ele é o contrato imutável (atualizado via _Reducers_) que armazena:
 
-Logging: Grava interações na tabela ai_audit_logs.
+- `messages`: Array de interações (HumanMessage, AIMessage, ToolMessage).
+- `telefoneOrigem`, `unidadeId`: Identificação multi-tenant.
+- `iso_audit_trail`: Dicionário contendo flags de rastreabilidade (PII, Risco Clínico, Provedor Usado).
 
-3.2. Providers (providers/\*)
-Isolam a lógica específica de cada API.
+---
 
-OpenAIProvider: Configurado com temperature: 0.3 e tool_choice: "auto".
+## 2. Dicionário de Nós (Nodes)
 
-GeminiProvider: Configurado para velocidade. O método auditResponse retorna JSON puro { aprovado: boolean }.
+Os Nós são funções assíncronas isoladas que recebem o Estado Atual, realizam um processamento e retornam uma atualização desse estado.
 
-3.3. Personalização (prompts/index.js)
-Os prompts não são textos fixos, são funções.
+| Nó             | Arquivo             | Responsabilidade                                                                                                                                                                      |
+| -------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Gatekeeper** | `GatekeeperNode.js` | Identifica a Sessão no DB, aplica o `PIIMasker` para anonimizar CPFs/Emails (LGPD) antes de enviar para a LLM, e verifica consentimentos.                                             |
+| **Brain**      | `BrainNode.js`      | É o Cérebro da operação (**OpenAI GPT-4o**). Decide se responde ao paciente usando empatia ou se executa uma _Tool_ para buscar informações no banco.                                 |
+| **Tools**      | (Nativo LangGraph)  | Aciona as ferramentas contidas na pasta `tools/`. Usa zod e knex para transações seguras de banco de dados (ex: Agendamentos, Busca de Horários).                                     |
+| **Fallback**   | `FallbackNode.js`   | É o Plano B (**Gemini 1.5 Flash**). Só entra em cena se a rede da OpenAI falhar ou der Timeout (Padrão Circuit Breaker / Failover).                                                   |
+| **Supervisor** | `SupervisorNode.js` | É o **Auditor Clínico** (Adversarial AI - Gemini). Inspeciona a resposta que o BrainNode gerou para o paciente e bloqueia "alucinações" (ex: receitar remédios ou inventar preparos). |
+| **AuditLog**   | `AuditLogNode.js`   | O escrivão. Materializa o estado final da FSM na tabela `ai_audit_logs` no PostgreSQL, garantindo o trilho da ISO 42001.                                                              |
 
-Como funciona: TRIAGEM(config) -> Retorna "Você é a assistente da Clínica X, com tom de voz Y".
+---
 
-Manutenção: Para alterar o comportamento global, edite este arquivo. Para alterar uma clínica específica, edite a tabela unidades no banco.
+## 3. Árvore de Decisão / Roteamento (`RoutingEdges.js`)
 
-4. Banco de Dados e Persistência
-   4.1. Tabela chat_sessions (A Memória FSM)
-   estado_atual: Define a "personalidade" (Prompt) ativa.
+As _Edges Condicionais_ são os "guardas de trânsito" do nosso Grafo. Eles não alteram dados, apenas decidem para onde o fluxo deve seguir.
 
-TRIAGEM: Identificação inicial.
+### 3.1. Roteamento pós Gatekeeper
 
-ORIENTACOES: Tira-dúvidas (RAG).
+- **SE** a sessão estiver em `TRANSBORDO` ou não houver `aceiteLgpd`: O fluxo vai direto para o `AuditLogNode` e ignora a inteligência.
+- **SE NÃO**: O fluxo segue para o `BrainNode`.
 
-AGENDAMENTO: Busca de horários.
+### 3.2. Roteamento pós BrainNode
 
-expires_at: TTL (Time-To-Live). Sessões expiram em 24h (Direito ao Esquecimento).
+- **SE** a LLM decidiu chamar uma função (existe a propriedade `tool_calls` na mensagem): Vai para a execução das `tools`.
+- **SE NÃO** (gerou o texto final): Segue para o `SupervisorNode` para ser auditado clinicamente.
 
-4.2. Tabela ai_audit_logs (A Caixa Preta)
-Registro imutável para defesa jurídica e análise de qualidade.
+### 3.3. Roteamento pós Tools (Guardião Anti-Loop)
 
-Colunas críticas: input_usuario, decisao_ia, veredicto_auditoria, latency_ms.
+- **SE** a IA entrou num loop de erro tentando chamar o banco mais de 12 vezes (`messages.length > 12`): Aciona o `FallbackNode` para gerar uma quebra técnica educada e parar de consumir tokens.
+- **SE NÃO**: O fluxo volta para o `BrainNode` ler o resultado que o banco de dados retornou.
 
-4.3. Tabela procedimentos (O Cérebro Médico - RAG)
-Campos preparo_obrigatorio, contraindicacoes são lidos pela ProtocolTool.
+---
 
-RAG Estrito: A IA é proibida de inventar preparos. Ela só repete o que está nestes campos.
+## 4. Fluxo Topológico (Autômato)
 
-4.4. Tabela unidades (Configuração Multi-Tenant)
-Coluna config_ia (JSONB): Guarda { "tom_de_voz": "Formal", "regras": "Não atendemos convênio X" }.
+```plaintext
+                    [ Início (START) ]
+                            |
+                            v
+                    (1) Gatekeeper Node
+                            |
+            [Transbordo ou Sem LGPD?] ----------> (Fim / AuditLog)
+                            |
+                            v (Aprovado)
+                    (2) Brain Node (GPT-4o) <------------+
+                            |                            |
+            [A IA chamou alguma Ferramenta?]             |
+               /                       \                 |
+            SIM                        NÃO               |
+            /                            \               |
+           v                              v              |
+    (3) Tools Node                (4) Supervisor Node    |
+           |                              |              |
+    [Loop Técnico > 12x?]                 |              |
+       /           \                      |              |
+     NÃO           SIM                    |              |
+     /               \                    |              |
+ (Volta ao Brain)  (Fallback Node Gemini) |              |
+                       |                  |              |
+                       +------------------+              |
+                                          |              |
+                                          v              |
+                                  (5) AuditLog Node      |
+                                          |              |
+                                          v              |
+                                      [ END ]
+```
 
-Isso permite que cada cliente tenha uma IA única sem mudar o código.
+## 5. Como dar manutenção e Escalar?
 
-5. Ferramentas (Tools) e Integrações
-   5.1. AvailabilityTool
-   Reutiliza o src/services/core/AvailabilityService.js.
+1. **Para adicionar uma nova Ferramenta (Tool):**
+   - Crie o arquivo `tools/NomeDaFerramentaTool.js`.
+   - Use a classe `DynamicStructuredTool` com validação de esquema via `zod`.
+   - Importe e adicione ao Array em `tools/index.js`. O `ToolNode` detectará automaticamente.
 
-Segurança: A IA não calcula slots. Ela apenas pede ao Service legado e formata a resposta.
+2. **Para adicionar novas regras de Estado Global:**
+   - Altere `state/ConfirmaMedState.js` adicionando a chave na estrutura `Annotation.Root`.
+   - Declare o `reducer` se precisar que os dados antigos façam mescla/merge com os dados novos.
 
-5.2. ProtocolTool
-Realiza busca Fuzzy (ILIKE) na tabela procedimentos.
+3. **Para ajustar a rígidez do Auditor Médico:**
+   - Edite o prompt interno do arquivo `nodes/SupervisorNode.js`. Ele usa _Structured Output_ nativo para forçar a API do Gemini a devolver um JSON booleano com a flag de aprovação.
 
-Fallback: Se não achar protocolo, retorna NULL, e a IA é instruída a transferir para humano.
-
-5.3. WebhookController (A Integração)
-Identifica a instância do WhatsApp (instanceId).
-
-Carrega as configs da unidade.
-
-Gerencia a criação/recuperação da sessão.
-
-Executa a resposta (Texto ou Tool) via WhatsappService.
-
-6. Procedimentos de Manutenção e Troubleshooting
-   Cenário A: A OpenAI caiu
-   Sintoma: Logs de erro [OpenAI Error] no terminal.
-
-Comportamento: O sistema muda automaticamente para o Gemini. Nenhuma ação manual necessária.
-
-Cenário B: Cliente reclama que a IA é "muito informal"
-Ação: Vá no painel administrativo (ou banco), tabela unidades, coluna config_ia.
-
-Ajuste: Mude tom_de_voz para "Formal, técnico e sério".
-
-Resultado: Na próxima mensagem, o Prompt será regenerado com a nova instrução.
-
-Cenário C: A IA agendou num horário bloqueado
-Causa: Concorrência. Dois pacientes tentando o mesmo slot.
-
-Proteção: A SchedulingTool faz uma verificação final de WHERE status = 'AGENDADO' antes do Insert. Se falhar, a IA recebe o erro e pede para o usuário escolher outro horário.
-
-7. Pontos de Atenção (Warning Zone ⚠️)
-   PII Masking: Nunca desative o PIIMasker. Enviar CPF real para a OpenAI viola a LGPD.
-
-Timeouts: O WhatsApp espera resposta em ~15s. Se o AvailabilityService for lento (muitas consultas no banco), a IA pode dar timeout. Mantenha os índices do banco otimizados.
-
-Auditoria Falso-Positivo: Se o Gemini bloquear muitos agendamentos legítimos, ajuste o prompt AUDITORIA em prompts/index.js para ser menos restritivo.
-
-Fim da Documentação Técnica.
+4. **Troubleshooting Geral:**
+   - Se a IA devolver a mensagem: _"Desculpe, por diretrizes de segurança clínica, não posso responder a essa solicitação"_, significa que a ISO 42001 barrou o LLM primário através do `SupervisorNode`. Cheque a tabela `ai_audit_logs` no banco de dados para ver a justificativa.
+   - Se a IA responder _"nosso sistema de atendimento está passando por uma instabilidade técnica"_, significa que a compilação do Grafo `builder.compile().invoke()` encontrou uma exceção não-tratada, provavelmente erro de syntax em uma `Tool` recém adicionada.

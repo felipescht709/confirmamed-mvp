@@ -28,4 +28,10 @@ const softDelete = (id) =>
     .where({ id_procedimento: id })
     .update({ deleted_at: knex.fn.now(), ativo: false });
 
-module.exports = { create, listByUnidade, update, softDelete };
+const getById = (id) =>
+  knex("procedimentos")
+    .where({ id_procedimento: id })
+    .whereNull("deleted_at")
+    .first();
+
+module.exports = { create, getById, listByUnidade, update, softDelete };
